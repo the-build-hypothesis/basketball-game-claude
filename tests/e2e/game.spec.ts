@@ -137,7 +137,13 @@ test('controls: move, pass to a teammate, and shoot through the keyboard', async
   await expect.poll(async () => (await snap(page)).ball, { timeout: 4000 }).toBe('held');
   const afterPass = await snap(page);
   expect(afterPass.owner).not.toBe(passer);
-  expect(afterPass.ctrl).toBe(afterPass.owner); // control follows the ball
+  if (afterPass.owner < 5) {
+    expect(afterPass.ctrl).toBe(afterPass.owner); // control follows the ball
+  } else {
+    // pass was intercepted by the AI: the human now controls a defender
+    expect(afterPass.ctrl).toBeLessThan(5);
+    await giveBall(page, 6, 0);
+  }
 
   // shoot (hold and release)
   await page.keyboard.down('Space');
