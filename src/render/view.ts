@@ -5,6 +5,7 @@ import type { GameEvent } from '../sim/types';
 import { buildArena, type Arena, type Quality } from './scene';
 import { PlayerView } from './players';
 import { makeBallTexture } from './textures';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 export type CameraMode = 'broadcast' | 'follow';
 
@@ -25,6 +26,7 @@ export class GameView {
   private game: Game | null = null;
   private ballQuat = new THREE.Quaternion();
   quality: Quality;
+  private envTex: THREE.Texture | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -40,6 +42,14 @@ export class GameView {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 200);
     this.arena = buildArena(quality, this.renderer.capabilities.getMaxAnisotropy());
+    if (quality !== 'low') {
+      // procedural image-based lighting: subtle reflections on the hardwood, glass and rims
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      this.envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      pmrem.dispose();
+      this.arena.scene.environment = this.envTex;
+      this.arena.scene.environmentIntensity = 0.25;
+    }
 
     const ballGeo = new THREE.SphereGeometry(BALL_R, 32, 20);
     const ballMat = new THREE.MeshStandardMaterial({ map: makeBallTexture(), roughness: 0.6 });
@@ -220,6 +230,7 @@ export class GameView {
   dispose(): void {
     for (const pv of this.players) pv.dispose();
     this.arena.dispose();
+    this.envTex?.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
   }
