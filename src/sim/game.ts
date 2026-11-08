@@ -107,6 +107,8 @@ export class Game {
     stealPressed: false,
   };
   private prevShootHeld = false;
+  /** Multiplier on random shot error (1 = normal). Tests use 0 for deterministic aim. */
+  shotErrorScale = 1;
 
   constructor(config: Partial<GameConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -562,8 +564,8 @@ export class Game {
     const base = a.layup ? 0.028 + 0.01 * d : 0.03 + 0.011 * d;
     const tm = Math.min(a.layup ? 0.7 + 2.2 * ae : 0.55 + 5 * ae, 4.5);
     const fatigue = 1 + (1 - p.stamina) * 0.25;
-    const sigma = (base * tm * (1 + 0.9 * contest) * fatigue) / p.shootRating;
-    const bias = e * (a.layup ? 0.15 : 0.38);
+    const sigma = ((base * tm * (1 + 0.9 * contest) * fatigue) / p.shootRating) * this.shotErrorScale;
+    const bias = e * (a.layup ? 0.2 : 0.85);
     const depthErr = 0.035 + bias + this.rng.normal() * sigma;
     const latErr = this.rng.normal() * sigma * 0.75;
     const perp = { x: -toR.z, z: toR.x };

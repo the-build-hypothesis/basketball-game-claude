@@ -173,10 +173,14 @@ export function stepBall(b: BallBody, dt: number, substeps: number): PhysicsHits
       b.pos.y = BALL_R;
       if (b.vel.y < 0) {
         const impact = -b.vel.y;
-        hits.floor = Math.max(hits.floor, impact);
-        b.vel.y = impact > 0.35 ? impact * FLOOR_E : 0;
-        b.vel.x *= FLOOR_FRICTION;
-        b.vel.z *= FLOOR_FRICTION;
+        if (impact > 0.35) {
+          hits.floor = Math.max(hits.floor, impact);
+          b.vel.y = impact * FLOOR_E;
+          b.vel.x *= FLOOR_FRICTION;
+          b.vel.z *= FLOOR_FRICTION;
+        } else {
+          b.vel.y = 0; // resting / rolling contact
+        }
       }
     }
     // rolling friction when on the floor
