@@ -16,9 +16,9 @@ export interface AIParams {
 }
 
 const PARAMS: Record<string, AIParams> = {
-  easy: { timingSigma: 0.17, reaction: 0.34, stealTry: 0.03, speed: 0.93, gap: 1.35 },
-  normal: { timingSigma: 0.11, reaction: 0.22, stealTry: 0.06, speed: 1.0, gap: 1.1 },
-  hard: { timingSigma: 0.075, reaction: 0.14, stealTry: 0.09, speed: 1.04, gap: 0.95 },
+  easy: { timingSigma: 0.11, reaction: 0.34, stealTry: 0.03, speed: 0.93, gap: 1.35 },
+  normal: { timingSigma: 0.07, reaction: 0.22, stealTry: 0.06, speed: 1.0, gap: 1.1 },
+  hard: { timingSigma: 0.05, reaction: 0.14, stealTry: 0.09, speed: 1.04, gap: 0.95 },
 };
 
 /** Difficulty only applies to the AI opponent of a human team; everyone else plays "normal". */
@@ -80,8 +80,8 @@ export function shotValue(g: Game, p: Player, pos: V2): number {
   else if (d < LAYUP_RANGE) base = 0.6;
   else if (d < 4.5) base = 0.46;
   else if (d < 6.7) base = 0.41;
-  else if (d < 8.2) base = 0.37;
-  else base = Math.max(0, 0.37 - (d - 8.2) * 0.12);
+  else if (d < 8.2) base = 0.32;
+  else base = Math.max(0, 0.32 - (d - 8.2) * 0.12);
   const pts = shotPointValue(pos.x, pos.z, bx);
   let od = Infinity;
   for (const q of g.players) if (q.team !== p.team) od = Math.min(od, dist2(q.pos, pos));
@@ -206,6 +206,27 @@ function ballhandler(g: Game, p: Player, dt: number): void {
     return;
   }
 
+  const pnr = g.pnr;
+  if (pnr && pnr.handler === p.id && pnr.stage !== 'roll') {
+    if (pnr.stage === 'hold') {
+      // come off the screen: run past the screener on the side away from the defender
+      const scr = g.players[pnr.screener];
+      const man = g.players[g.matchups[p.id]];
+      const away = norm2(scr.pos.x - man.pos.x, scr.pos.z - man.pos.z);
+      const tgt = { x: scr.pos.x + away.x * 1.6 + (bx - scr.pos.x) * 0.15, z: scr.pos.z + away.z * 1.6 - scr.pos.z * 0.15 };
+      clampToCourt(tgt, 0.6);
+      moveTo(p, tgt, true, 0.4);
+    } else {
+      // wait for the screen, keep the dribble alive
+      moveTo(p, p.pos);
+    }
+    if (clockLeft < 3) g.pnr = null;
+    return;
+  }
+  if (ai.decT <= 0 && !pnr && front && ai.holdT > 1.0 && g.time - g.lastPnrT > 9) {
+    const man = g.players[g.matchups[p.id]];
+    if (man && dist2(man.pos, p.pos) < 1.7 && dB > 5 && g.rng.chance(0.2)) startPnr(g, p);
+  }
   if (ai.decT <= 0) {
     ai.decT = g.rng.range(0.22, 0.4);
     const myVal = shotValue(g, p, p.pos);
@@ -251,6 +272,86 @@ function ballhandler(g: Game, p: Player, dt: number): void {
   }
 }
 
+/** Start a pick-and-roll for ball-handler h with the nearest forward/center. */
+export function startPnr(g: Game, h: Player): boolean {
+  let best: Player | null = null;
+  let bd = 9;
+  for (const q of g.players) {
+    if (q.team !== h.team || q.id === h.id || q.role < 3 || g.isHumanControlled(q)) continue;
+    const d = dist2(q.pos, h.pos);
+    if (d < bd) {
+      bd = d;
+      best = q;
+    }
+  }
+  if (!best) return false;
+  g.pnr = { team: h.team, handler: h.id, screener: best.id, stage: 'set', t: 0 };
+  g.lastPnrT = g.time;
+  return true;
+}
+
+export function maintainPnr(g: Game, dt: number): void {
+  const pnr = g.pnr;
+  if (!pnr) {
+    // AI big sets a screen for a human ball-handler who is being guarded closely
+    const h = g.ballHandler();
+    if (h && g.phase === 'live' && g.isHumanControlled(h) && g.time - g.lastPnrT > 8 && h.holdT > 1.5) {
+      const man = g.players[g.matchups[h.id]];
+      const s = attackSign(h.team);
+      if (man && s * h.pos.x > 2 && dist2(man.pos, h.pos) < 1.8 && g.rng.chance(dt * 0.4)) startPnr(g, h);
+    }
+    return;
+  }
+  pnr.t += dt;
+  const h = g.ballHandler();
+  // cancel if the ball moved on, possession changed or play stopped
+  if (g.phase !== 'live' || g.possession !== pnr.team || pnr.t > 6 || (pnr.stage !== 'roll' && (!h || h.id !== pnr.handler))) {
+    if (pnr.stage === 'roll' && g.phase === 'live' && g.possession === pnr.team && pnr.t < 6) return;
+    g.pnr = null;
+    return;
+  }
+  const scr = g.players[pnr.screener];
+  if (pnr.stage === 'hold' && h && (dist2(h.pos, scr.pos) > 2.4 || pnr.t > 4)) {
+    pnr.stage = 'roll';
+    pnr.t = Math.min(pnr.t, 3.5);
+  }
+}
+
+/** Screen spot: beside the ball-handler's defender, on the basket side. */
+function screenSpot(g: Game, h: Player): V2 {
+  const man = g.players[g.matchups[h.id]];
+  const bx = attackBasketX(h.team);
+  const side = h.pos.z >= 0 ? -1 : 1; // screen toward the middle of the floor
+  const toB = norm2(bx - man.pos.x, -man.pos.z);
+  const perp = { x: -toB.z * side, z: toB.x * side };
+  return { x: man.pos.x + perp.x * 0.75 + toB.x * 0.15, z: man.pos.z + perp.z * 0.75 + toB.z * 0.15 };
+}
+
+function screener(g: Game, p: Player): void {
+  const pnr = g.pnr!;
+  const h = g.players[pnr.handler];
+  const bx = attackBasketX(p.team);
+  const s = attackSign(p.team);
+  if (pnr.stage === 'set') {
+    const spot = screenSpot(g, h);
+    clampToCourt(spot, 0.5);
+    moveTo(p, spot, true, 0.3);
+    faceToward(p, h.pos);
+    if (dist2(p.pos, spot) < 0.45) {
+      pnr.stage = 'hold';
+    }
+    if (pnr.t > 3.5) g.pnr = null;
+  } else if (pnr.stage === 'hold') {
+    p.intent.mx = 0;
+    p.intent.mz = 0;
+    faceToward(p, h.pos);
+  } else {
+    // roll to the rim
+    moveTo(p, { x: bx - s * 1.5, z: p.pos.z > 0 ? 0.8 : -0.8 }, true, 0.5);
+    faceToward(p, g.ball.pos);
+  }
+}
+
 function offBall(g: Game, p: Player, dt: number): void {
   const ai = p.ai;
   const s = attackSign(p.team);
@@ -269,6 +370,11 @@ function offBall(g: Game, p: Player, dt: number): void {
       moveTo(p, tgt, true);
       return;
     }
+  }
+  const pnr = g.pnr;
+  if (pnr && pnr.screener === p.id && g.phase === 'live') {
+    screener(g, p);
+    return;
   }
   ai.spotT -= dt;
   if (ai.spotT <= 0) {

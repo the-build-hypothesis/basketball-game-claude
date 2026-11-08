@@ -38,7 +38,7 @@ import type {
   TeamId,
   TeamStats,
 } from './types';
-import { updateAI, aiParams } from './ai';
+import { updateAI, aiParams, maintainPnr } from './ai';
 
 const NAMES: [string[], string[]] = [
   ['Okafor', 'Lindqvist', 'Marrero', 'Tanaka', 'Brennan'],
@@ -129,6 +129,9 @@ export class Game {
   /** Multiplier on foul probabilities (1 = normal). */
   foulRate = 1;
   teamFouls: [number, number] = [0, 0];
+  /** Active pick-and-roll (set by the AI). */
+  pnr: { team: TeamId; handler: number; screener: number; stage: 'set' | 'hold' | 'roll'; t: number } | null = null;
+  lastPnrT = -99;
   /** Points scored per player id. */
   playerPts: number[] = new Array(10).fill(0);
   ft: FreeThrowState | null = null;
@@ -613,10 +616,10 @@ export class Game {
     const ae = Math.abs(e);
     const label = ae < 0.035 ? 'PERFECT' : ae < 0.09 ? 'GOOD' : e < 0 ? 'EARLY' : 'LATE';
     const contest = a.ft ? 0 : this.contestLevel(p);
-    const base = a.layup ? 0.028 + 0.01 * d : 0.03 + 0.011 * d;
+    const base = a.layup ? 0.028 + 0.01 * d : 0.03 + 0.0095 * d;
     const tm = Math.min(a.layup ? 0.7 + 2.2 * ae : 0.55 + 5 * ae, 4.5);
     const fatigue = 1 + (1 - p.stamina) * 0.25;
-    const sigma = ((base * tm * (1 + 0.9 * contest) * fatigue * (fouler ? 1.6 : 1)) / p.shootRating) * this.shotErrorScale;
+    const sigma = ((base * tm * (1 + 0.7 * contest) * fatigue * (fouler ? 1.6 : 1)) / p.shootRating) * this.shotErrorScale;
     const bias = e * (a.layup ? 0.2 : 0.85);
     const depthErr = 0.035 + bias + this.rng.normal() * sigma;
     const latErr = this.rng.normal() * sigma * 0.75;
@@ -980,6 +983,7 @@ export class Game {
     if (this.phase === 'freethrow') this.updateFreeThrow(dt);
 
     this.updateHuman(dt);
+    maintainPnr(this, dt);
     for (const p of this.players) {
       // the designated inbounder walks to the spot automatically, even if human-controlled
       const autoInbounder = this.phase === 'deadball' && this.deadball?.inbounder === p.id;
@@ -1218,7 +1222,11 @@ export class Game {
   }
 
   private isPinned(p: Player): boolean {
-    return (this.phase === 'inbound' && this.inbound?.inbounder === p.id) || (p.action?.kind === 'shoot' && !p.action.released);
+    return (
+      (this.phase === 'inbound' && this.inbound?.inbounder === p.id) ||
+      (p.action?.kind === 'shoot' && !p.action.released) ||
+      (this.pnr?.stage === 'hold' && this.pnr.screener === p.id)
+    );
   }
 
   private updateBall(dt: number): void {
@@ -1263,7 +1271,8 @@ export class Game {
     }
 
     if (hits.basket >= 0) this.handleBasket(hits.basket);
-    if (b.state === 'flight' || b.state === 'loose') this.collideBodies();
+    // shots in flight interact with defenders through the block model (hands), not torsos
+    if ((b.state === 'flight' && b.flightKind === 'pass') || b.state === 'loose') this.collideBodies();
 
     if (b.state === 'dead') return;
 
