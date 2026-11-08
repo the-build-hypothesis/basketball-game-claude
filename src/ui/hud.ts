@@ -102,7 +102,8 @@ export class Hud {
           break;
         }
         case 'rejected':
-          this.toast(`No basket (${e.reason})`, 'bad', true, 1.5);
+          if (e.reason.startsWith('on offense')) this.toast('On offense you always control the ball handler', '', true, 1.5);
+          else this.toast(`No basket (${e.reason})`, 'bad', true, 1.5);
           break;
       }
     }

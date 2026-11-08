@@ -182,6 +182,12 @@ class App {
       ['Turnovers', String(s[0].tov), String(s[1].tov)],
       ['Fouls', String(s[0].pf), String(s[1].pf)],
     ];
+    const top = (t: number) => {
+      const ps = g.players.filter((p) => p.team === t).sort((a, b) => g.playerPts[b.id] - g.playerPts[a.id]);
+      const p = ps[0];
+      return `#${p.number} ${p.name} ${g.playerPts[p.id]} pts`;
+    };
+    rows.unshift(['Top scorer', top(0), top(1)]);
     $('final-stats').innerHTML =
       `<tr><th></th><th>${TEAM_SHORT[0]}</th><th>${TEAM_SHORT[1]}</th></tr>` +
       rows.map((r) => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('');
@@ -247,6 +253,17 @@ class App {
       this.view.onEvents(events);
       this.view.render(this.state === 'paused' ? 0 : dt, now / 1000);
       if (this.state === 'playing' || this.state === 'paused' || this.state === 'final') this.hud.update(g, dt);
+      // anchor the shot meter beside the controlled player
+      if (g.controlled >= 0 && this.state === 'playing') {
+        const p = g.players[g.controlled];
+        const sp = this.view.toScreen(p.pos.x, p.pos.y + 1.3, p.pos.z);
+        const m = $('shotmeter');
+        if (sp) {
+          m.style.left = `${Math.min(window.innerWidth - 60, Math.max(10, sp.x + 40))}px`;
+          m.style.top = `${Math.min(window.innerHeight - 120, Math.max(120, sp.y))}px`;
+          m.style.bottom = 'auto';
+        }
+      }
       if (this.state === 'playing' && g.phase === 'final') {
         this.finalT += dt;
         if (this.finalT > 2.5) this.showFinal();

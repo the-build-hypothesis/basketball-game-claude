@@ -185,6 +185,14 @@ export class GameView {
     this.renderer.render(this.arena.scene, this.camera);
   }
 
+  /** Project a world point to CSS pixel coordinates (null if behind the camera). */
+  toScreen(x: number, y: number, z: number): { x: number; y: number } | null {
+    const v = new THREE.Vector3(x, y, z).project(this.camera);
+    if (v.z > 1) return null;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
+  }
+
   /** Screen-space right/forward vectors projected onto the court for camera-relative controls. */
   controlBasis(): { right: { x: number; z: number }; fwd: { x: number; z: number } } {
     const dir = new THREE.Vector3();

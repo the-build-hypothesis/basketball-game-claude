@@ -129,6 +129,8 @@ export class Game {
   /** Multiplier on foul probabilities (1 = normal). */
   foulRate = 1;
   teamFouls: [number, number] = [0, 0];
+  /** Points scored per player id. */
+  playerPts: number[] = new Array(10).fill(0);
   ft: FreeThrowState | null = null;
   private pendingFT: { shooter: number; n: number } | null = null;
 
@@ -226,6 +228,7 @@ export class Game {
   startMatch(): void {
     this.score = [0, 0];
     this.stats = [emptyStats(), emptyStats()];
+    this.playerPts = new Array(10).fill(0);
     this.events = [];
     this.activeShot = null;
     this.buzzerPending = false;
@@ -499,7 +502,10 @@ export class Game {
     const ht = this.config.humanTeam;
     if (ht < 0) return;
     const bh = this.ballHandler();
-    if (bh && bh.team === ht && this.phase !== 'tipoff') return; // on offense you control the ballhandler
+    if (bh && bh.team === ht && this.phase !== 'tipoff') {
+      this.emit({ type: 'rejected', reason: 'on offense you control the ball handler' });
+      return;
+    }
     const mates = this.teamPlayers(ht).filter((p) => p.id !== this.controlled);
     mates.sort((a, b) => dist2(a.pos, this.ball.pos) - dist2(b.pos, this.ball.pos));
     // nearest teammate to the ball other than the current one (repeated presses cycle outward)
@@ -1352,6 +1358,7 @@ export class Game {
     this.score[team] += points;
     const st = this.stats[team];
     st.pts += points;
+    if (shooter >= 0) this.playerPts[shooter] += points;
     if (shooter >= 0) {
       if (shot && shot.ft) st.ftm++;
       else {
