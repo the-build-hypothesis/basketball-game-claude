@@ -62,6 +62,7 @@ chance of winning it.
 | Steal attempt (risk of a reach-in foul) | `F` / `L` | X |
 | Switch to the defender nearest the ball | `Tab` / `Q` | Y / LB |
 | Toggle broadcast / follow camera | `C` | Back |
+| Instant replay (after a made basket) | `R` | |
 | Mute · show/hide controls · FPS overlay | `M` · `H` · `` ` `` (or F3) | |
 | Pause / resume | `Esc` / `P` | Start |
 
@@ -76,6 +77,8 @@ offensive rebound off the rim), four configurable quarters (default 2:00), overt
 out-of-bounds and inbounds, made-basket inbounds from the baseline, steals, interceptions,
 blocks, rebounds, shooting fouls (2/3 free throws, and-ones), reach-in fouls, team fouls with a
 5-foul bonus, shot-clock violations, and buzzer-beaters (a shot released before 0.0 counts).
+Sprinting at the rim (Shift + Space) dunks. Your AI big men will come set screens for you;
+run your ball-handler past the screener to rub off your defender.
 
 ## Project layout
 

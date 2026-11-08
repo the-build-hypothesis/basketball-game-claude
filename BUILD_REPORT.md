@@ -12,14 +12,15 @@ the success definition asks for works: start from a menu, move, pass, shoot with
 score 2s and 3s that are decided by real ball/rim geometry, defend (switch, steal, block) against an
 AI that brings the ball up, passes, drives and shoots, see possession change, and finish with a
 final score and restart. Beyond the P0/P1 list the game also has fouls, free throws, a team-foul
-bonus, overtime, dunks, a tip-off, a follow camera, gamepad support, adaptive graphics quality,
-procedural sound, and an end-of-game box score.
+bonus, overtime, dunks, pick-and-roll screens, an instant replay, ball deflections off player
+bodies, a tip-off, a follow camera, gamepad support, adaptive graphics quality, procedural sound,
+and an end-of-game box score.
 
 Everything visual and audible is generated procedurally in code. No external art, model, audio or
 font files ship, so there is no third-party asset licensing exposure.
 
-**Validation:** 48 unit tests (Vitest), including several complete headless AI-vs-AI and
-human-input matches, and 11 Playwright browser tests. All pass both locally and against the
+**Validation:** 49 unit tests (Vitest), including several complete headless AI-vs-AI and
+human-input matches, and 12 Playwright browser tests. All pass both locally and against the
 production URL (section 6).
 
 **Main caveat:** the build machine has no GPU (WSL, software rendering only), so frame rate on real
@@ -103,12 +104,12 @@ See the full checklist in section 12. Highlights:
 | Substitutions, timeouts, foul-outs | Not implemented. Five players per side play the whole game. Stamina drains with sprinting, recovers when not sprinting, and lowers speed and shooting accuracy |
 | Traveling, 3-second, 8-second, backcourt, goaltending, lane violations | Not enforced (P2 per spec §5.1). Blocks are not allowed on clearly descending balls (vertical speed below −2.5 m/s) or more than 0.5 s after release, which approximates goaltending |
 | Teams switching baskets at halftime | Not done. The Herons always attack the right (+x) basket so the controls stay consistent |
-| Pick-and-roll, defensive switching, zone, play-calling | Not implemented (AI-009 partial: cuts, drives, difficulty levels exist) |
+| Defensive switching, zone, play-calling | Not implemented. Pick-and-roll, cuts, drives and difficulty levels do exist (AI-009 partial). Defenders fight through screens physically but never switch |
 | Human control of off-ball offensive players | On offense you always control the ball-handler. Tab works on defense and for loose balls |
-| Ball vs. player-body collisions | The ball collides with floor, rim, backboard and net. It does not bounce off player bodies. Loose balls near a player are caught instead |
+| Ball vs. player-body collisions | Passes and loose balls deflect off player torsos (vertical capsules). Shots in flight interact with defenders only through the hand/block model, not torsos |
 | Interceptions/steals | Physical proximity gates them, then a probability roll decides (with defensive rating and distance). Hand-ball contact is not simulated for steals. Blocks are hand-ball proximity plus a roll |
 | Dribble | The held ball follows a kinematic dribble path (hand to floor to hand) tied to the handler's speed. It is not a free physics body while held, but it is knocked loose on steals |
-| Instant replay, shot charts, music, commentary | Not implemented (UI-007 partial: synthesized SFX, crowd reactions, box score with top scorers) |
+| Shot charts, music, commentary | Not implemented. UI-007 partial: instant replay (R after a made basket), synthesized SFX, crowd reactions, box score with top scorers |
 | Configurable key bindings | Not implemented. Two keys exist for most actions (e.g. Space/J, E/K) plus the gamepad |
 | Explicit resets (allowed by VIS-009) | Players are placed into formation at the start of each period and for free throws. The ball is placed in the inbounder's hands when an inbound starts. An inbounder who cannot reach the spot within 4 s is moved there |
 
@@ -125,27 +126,29 @@ the bundle, with its license banner preserved.
 Commands: `npm test` (unit), `npm run test:e2e` (browser, local preview),
 `BASE_URL=<prod url> npm run test:e2e` (production).
 
-**Unit tests (Vitest): 48 passed / 0 failed** (`tests/unit/`, ~45 s)
+**Unit tests (Vitest): 49 passed / 0 failed** (`tests/unit/`, ~45 s)
 
 | Suite | Covers |
 |---|---|
-| `scoring.test.ts` (21) | 3-pt geometry (arc, corner, both baskets). Made 2 adds exactly 2 and gives the opponent the ball. Made 3 and corner 3 add exactly 3. AI team scores into its own basket. Early release misses. Late half-court heave misses. No double counting over 10 s. Ball through the rim while play is stopped is rejected. Ball dropped through the hoop scores by geometry. Ball beside the rim does not. Defensive/offensive rebound possession and shot clock (24/14). Steal, interception, completed pass (ball travels and control follows). Loose ball out of bounds and inbound. Shot-clock violation. Made basket leads to opponent inbound and back to live. Lost-ball-mid-gather guard. Human sprint dunk = 2. AI center dunk |
+| `scoring.test.ts` (22) | 3-pt geometry (arc, corner, both baskets). Made 2 adds exactly 2 and gives the opponent the ball. Made 3 and corner 3 add exactly 3. AI team scores into its own basket. Early release misses. Late half-court heave misses. No double counting over 10 s. Ball through the rim while play is stopped is rejected. Ball dropped through the hoop scores by geometry. Ball beside the rim does not. Defensive/offensive rebound possession and shot clock (24/14). Steal, interception, completed pass (ball travels and control follows). Loose ball out of bounds and inbound. Shot-clock violation. Made basket leads to opponent inbound and back to live. Lost-ball-mid-gather guard. Human sprint dunk = 2. AI center dunk. A pass into a defender who fails to intercept deflects off his body |
 | `match.test.ts` (18) | Q4 clock expiry leads to `final` with the correct score and no scoring afterwards. Tie leads to overtime. Q1 to Q2 transition. Buzzer-beater counts. Movement. Sprint is faster and drains stamina. Shoot press/release. Directional pass. Switch picks the defender nearest the ball. Auto-switch on possession change. Defensive jump. Restart is clean (0-0, Q1, full clock, tip-off). Same seed gives an identical match (determinism). **Five full AI-vs-AI matches** finish, with no NaN or out-of-arena positions, loose ball < 10.5 s, and no non-live phase > 10 s |
 | `fouls.test.ts` (5) | FTs worth exactly 1, last FT live. Shooting foul on a missed 2 gives 2 FTs. Reach-in before the bonus gives a side inbound, in the bonus 2 FTs. Team fouls reset per quarter. No fouls on open shots |
 | `human.test.ts` (4) | A full match with an idle human, and three full matches with a random button-mashing human, all through the real human-input path. Each reaches `final` with no stalls and a valid controlled player |
 
-**Browser tests (Playwright, Chromium 1254, software GL): 11 passed / 0 failed**, run against
+**Browser tests (Playwright, Chromium 1254, software GL): 12 passed / 0 failed**, run against
 local `vite preview` **and against the production URL**:
 smoke (menu, start, 10 players, clock runs, canvas actually renders, no console errors or failed
 requests), keyboard controls (move, pass with visible flight, shoot), 2-pointer and 3-pointer
 through the UI (scoreboard shows exactly 2/3, no double count, possession flips), clock expiry
 shows the final screen and Play again gives a clean 0-0 Q1 state, pause/resume/restart and Tab
 switch on defense, browser reload, AI offense shoots on its own, human free throws with the
-meter, focus loss auto-pauses, runtime error shows the error screen.
+meter, focus loss auto-pauses, runtime error shows the error screen, instant replay restores the
+exact live state.
 
-An earlier run had one intermittent failure in the controls test. The cause was a legitimately
-intercepted pass (the AI stole it). The test assumed every pass would be completed and now
-accepts either outcome.
+Earlier runs had two intermittent failures in the controls test, both legitimate gameplay outcomes
+that the test had not anticipated: the AI intercepted the pass, and later (after body collisions
+were added) the pass deflected off a defender within ~100 ms. The test now checks for the pass
+event in an app-level event log and accepts completed, intercepted or deflected outcomes.
 
 ## 7. Manual validation performed
 
@@ -157,12 +160,16 @@ play with real keyboard events and visual inspection of screenshots (`docs/scree
 - Real key presses: D moved the player screen-right about 5 m in 1.2 s, W moved screen-up, E
   passed with control following the receiver, Space hold and release shot the ball, Esc paused.
 - Headless match statistics were reviewed for basketball plausibility while tuning. A typical
-  2-minute-quarter match ends around 15–30 points per team, with 35–45% FG, 70–80% FT, 3–6 fouls,
-  5–10 turnovers, a few blocks and dunks per team, and occasional overtime.
+  2-minute-quarter match ends around 15–30 points per team. Over 12 seeded AI-vs-AI matches,
+  FG was 42–49%, 3P 29–43%, FT ~85%, with 5–10 turnovers, about 2–3 blocks and a few dunks per
+  team per game, 2–3 pick-and-rolls per minute of play, and occasional overtime.
 - Issues found this way and fixed: rolling friction that stopped loose balls dead; a timing bias
   too weak to make late releases miss; block and steal rates far too high (blocks were about a third
   of shots); AI over-passing; a shooter who lost the ball mid-gather could still release it; a
-  human-controlled inbounder not walking to the spot; AI bigs never finishing drives.
+  human-controlled inbounder not walking to the spot; AI bigs never finishing drives; AI field-goal
+  percentage collapsing to ~27% after a timing-bias change (fixed by tightening AI release timing,
+  lowering the AI's three-point valuation and easing the contest penalty); a missing import caught
+  by the in-game error screen during replay testing.
 
 ## 8. Performance measurements and limitations
 
@@ -214,11 +221,10 @@ Esc to pause.
 
 ## 11. What I would build next with more time
 
-1. Ball and player-body collisions, plus physically simulated hand contact for steals and
-   deflections.
-2. Pick-and-roll and screens, help-and-recover rotations, and switching on defense.
+1. Physically simulated hand contact for steals and deflections, and torso contact for shots.
+2. Help-and-recover rotations, switching on screens, and play-calling.
 3. Substitutions with a bench, timeouts, and foul-outs.
-4. Instant replay of made baskets from recorded sim snapshots (the deterministic sim makes this cheap).
+4. Shot charts and per-player box scores.
 5. Skinned, rigged player models with authored animation clips and blending.
 6. Halftime side switch, plus traveling, backcourt and 3-second violations behind a "simulation rules" toggle.
 7. Performance validation on a range of real GPUs, and instancing for the player rigs.
@@ -320,7 +326,7 @@ Legend: **PASS** implemented and verified · **PARTIAL** partly implemented or v
 | BALL-008 | PASS | Speed-dependent dribble, knocked loose on steals |
 | BALL-009 | PASS | Loose-ball recovery, interceptions, steals (tests) |
 | BALL-010 | PASS | One score per shot, rejected when play is stopped or after the buzzer (tests) |
-| BALL-011 | PARTIAL | Visual backspin and roll, animated net. Bank shots happen physically but are not deliberately aimed. Spin does not affect bounces |
+| BALL-011 | PARTIAL | Visual backspin and roll, animated net, deflections off bodies. Bank shots happen physically but are not deliberately aimed. Spin does not affect bounces |
 
 ### AI
 | ID | Status | Evidence / explanation |
@@ -333,7 +339,7 @@ Legend: **PASS** implemented and verified · **PARTIAL** partly implemented or v
 | AI-006 | PASS | Teammates space, cut and crash boards around the human ball-handler |
 | AI-007 | PASS | Two nearest per team chase loose balls (predicted landing point), rebound jumps, defensive re-matching on possession change |
 | AI-008 | PASS | Decisions use shot clock, game clock, openness, lane risk, positions |
-| AI-009 | PARTIAL | Cuts, drives, difficulty levels. No pick-and-roll or play-calling |
+| AI-009 | PARTIAL | Pick-and-roll (screen, hold, roll; AI bigs also screen for the human), cuts, drives, difficulty levels. No defensive switching or play-calling |
 
 ### UI
 | ID | Status | Evidence / explanation |
@@ -344,7 +350,7 @@ Legend: **PASS** implemented and verified · **PARTIAL** partly implemented or v
 | UI-004 | PASS | Quarter, shot clock (red under 5 s), player panel with stamina |
 | UI-005 | PASS | Toasts for scores, misses, air balls, blocks, steals, interceptions, turnovers, rebounds, fouls |
 | UI-006 | PASS | Controls overlay (H) and pause menu |
-| UI-007 | PARTIAL | Sound effects, box score and top scorers. No replay, music or commentary |
+| UI-007 | PARTIAL | Instant replay (R) with courtside camera, sound effects, box score and top scorers. No shot charts, music or commentary |
 
 ### Quality
 | ID | Status | Evidence / explanation |
@@ -396,3 +402,4 @@ Session start 01:04 (local time, 2026-11-08). Times are from commits and logs.
 | First production deployment | 01:31 |
 | Fouls and free throws | 01:43 |
 | Dunks, docs | ~02:00 |
+| Body collisions, instant replay, pick-and-roll, rebalance | 02:05–02:20 |
