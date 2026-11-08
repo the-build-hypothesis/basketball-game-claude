@@ -175,10 +175,12 @@ class App {
     const rows: Array<[string, string, string]> = [
       ['Field goals', pct(s[0].fgm, s[0].fga), pct(s[1].fgm, s[1].fga)],
       ['3-pointers', pct(s[0].tpm, s[0].tpa), pct(s[1].tpm, s[1].tpa)],
+      ['Free throws', pct(s[0].ftm, s[0].fta), pct(s[1].ftm, s[1].fta)],
       ['Rebounds (off)', `${s[0].oreb + s[0].dreb} (${s[0].oreb})`, `${s[1].oreb + s[1].dreb} (${s[1].oreb})`],
       ['Steals', String(s[0].stl), String(s[1].stl)],
       ['Blocks', String(s[0].blk), String(s[1].blk)],
       ['Turnovers', String(s[0].tov), String(s[1].tov)],
+      ['Fouls', String(s[0].pf), String(s[1].pf)],
     ];
     $('final-stats').innerHTML =
       `<tr><th></th><th>${TEAM_SHORT[0]}</th><th>${TEAM_SHORT[1]}</th></tr>` +

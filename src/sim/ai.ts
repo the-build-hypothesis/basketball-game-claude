@@ -134,7 +134,7 @@ export function updateAI(g: Game, p: Player, dt: number): void {
   it.face = null;
   const ph = g.phase;
   const b = g.ball;
-  if (ph === 'tipoff' || ph === 'final' || ph === 'quarterEnd' || ph === 'pregame') return;
+  if (ph === 'tipoff' || ph === 'final' || ph === 'quarterEnd' || ph === 'pregame' || ph === 'freethrow') return;
   if (ph === 'deadball' && g.deadball && g.deadball.inbounder === p.id) {
     moveTo(p, g.deadball.spot, true, 0.4);
     return;

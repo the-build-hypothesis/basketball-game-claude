@@ -251,3 +251,26 @@ test('AI offense advances the ball and attempts shots on its own', async ({ page
     .poll(async () => page.evaluate(() => (window as any).__app.game.stats[1].fga), { timeout: 30_000 })
     .toBeGreaterThan(0);
 });
+
+test('free throws: human shoots both with the Space meter', async ({ page }) => {
+  const errors = collectErrors(page);
+  await startMatch(page);
+  await page.evaluate(() => {
+    const g = (window as any).__app.game;
+    g.phase = 'live';
+    g.startFreeThrows(0, 2);
+  });
+  await expect(page.locator('#possession-label')).toContainText('FREE THROW 1 of 2');
+  for (let i = 0; i < 2; i++) {
+    await expect
+      .poll(async () => page.evaluate(() => { const g = (window as any).__app.game; return g.ball.state === 'held' && g.ball.owner === 0 && !g.players[0].action; }), { timeout: 8000 })
+      .toBe(true);
+    await page.keyboard.down('Space');
+    await page.waitForTimeout(500);
+    await page.keyboard.up('Space');
+    await expect.poll(async () => page.evaluate(() => (window as any).__app.game.stats[0].fta), { timeout: 4000 }).toBe(i + 1);
+  }
+  const s = await page.evaluate(() => { const g = (window as any).__app.game; return { ftm: g.stats[0].ftm, score: g.score[0] }; });
+  expect(s.score).toBe(s.ftm);
+  expect(errors).toEqual([]);
+});

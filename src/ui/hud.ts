@@ -46,10 +46,11 @@ export class Hud {
           const mine = e.team === human;
           const shooter = e.shooter >= 0 ? g.players[e.shooter] : null;
           this.toast(
-            `${e.points === 3 ? 'THREE! ' : ''}+${e.points} ${name(e.team)}`,
+            e.label === 'FT' ? `FREE THROW GOOD +1 ${name(e.team)}` : `${e.points === 3 ? 'THREE! ' : ''}+${e.points} ${name(e.team)}`,
             mine ? 'good' : 'bad',
+            e.label === 'FT',
           );
-          if (shooter) this.toast(`#${shooter.number} ${shooter.name}${e.label ? ' · ' + e.label + ' release' : ''}`, '', true, 1.4);
+          if (shooter && e.label !== 'FT') this.toast(`#${shooter.number} ${shooter.name}${e.label ? ' · ' + e.label + ' release' : ''}`, '', true, 1.4);
           break;
         }
         case 'miss':
@@ -88,6 +89,18 @@ export class Hud {
         case 'tipoff':
           this.toast(`${name(e.winner)} win the tip`, 'gold', true, 1.6);
           break;
+        case 'foul': {
+          const f = g.players[e.player];
+          const what = e.kind === 'shooting' ? 'Shooting foul' : 'Reach-in foul';
+          const tail = e.shots > 0 ? ` — ${e.shots} free throw${e.shots > 1 ? 's' : ''}` : ' — side out';
+          this.toast(`${what} on #${f.number} ${f.name}${tail}`, e.team === human ? 'bad' : 'good', true, 2.4);
+          break;
+        }
+        case 'freeThrows': {
+          const sh = g.players[e.shooter];
+          this.toast(`#${sh.number} ${sh.name} to the line (${e.total})`, 'gold', true, 2);
+          break;
+        }
         case 'rejected':
           this.toast(`No basket (${e.reason})`, 'bad', true, 1.5);
           break;
@@ -105,6 +118,12 @@ export class Hud {
     const showShot = g.shotClock <= g.gameClock + 0.01 && g.phase !== 'final';
     sc.textContent = showShot ? (g.shotClock < 5 ? g.shotClock.toFixed(1) : String(Math.ceil(g.shotClock))) : '—';
     sc.classList.toggle('low', showShot && g.shotClock < 5);
+    for (const t of [0, 1] as const) {
+      const f = $(`fouls${t}`);
+      const bonus = g.teamFouls[t] >= 5;
+      f.textContent = `FOULS ${g.teamFouls[t]}${bonus ? ' · BONUS' : ''}`;
+      f.classList.toggle('bonus', bonus);
+    }
     $('poss0').classList.toggle('on', g.possession === 0);
     $('poss1').classList.toggle('on', g.possession === 1);
 
@@ -117,6 +136,14 @@ export class Hud {
       case 'inbound':
         pl = g.possession === human ? 'INBOUND — press E to pass in' : `${TEAM_SHORT[g.possession as 0 | 1]} INBOUNDING`;
         break;
+      case 'freethrow': {
+        const ft = g.ft;
+        if (ft) {
+          const mine = ft.team === human;
+          pl = `FREE THROW ${ft.attempt} of ${ft.total}${mine ? ' — hold Space, release in the green' : ''}`;
+        }
+        break;
+      }
       case 'deadball':
         pl = `${TEAM_SHORT[g.possession as 0 | 1]} BALL`;
         break;

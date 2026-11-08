@@ -1,7 +1,7 @@
 import type { V2, V3 } from './math';
 
 export type TeamId = 0 | 1;
-export type Phase = 'pregame' | 'tipoff' | 'inbound' | 'live' | 'deadball' | 'quarterEnd' | 'final';
+export type Phase = 'pregame' | 'tipoff' | 'inbound' | 'live' | 'deadball' | 'freethrow' | 'quarterEnd' | 'final';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
 export interface GameConfig {
@@ -25,6 +25,8 @@ export interface ShootAction {
   fromZ: number;
   jumped: boolean;
   meterAtRelease: number;
+  /** Free throw (set shot, no jump). */
+  ft: boolean;
 }
 export interface SimpleAction {
   kind: 'pass' | 'steal' | 'recover' | 'block';
@@ -103,8 +105,11 @@ export interface ShotInfo {
   id: number;
   shooter: number;
   team: TeamId;
-  points: 2 | 3;
+  points: 1 | 2 | 3;
   layup: boolean;
+  ft: boolean;
+  /** Defender who committed a shooting foul on this attempt, or -1. */
+  fouledBy: number;
   dist: number;
   label: string;
   contest: number;
@@ -130,6 +135,9 @@ export interface TeamStats {
   stl: number;
   blk: number;
   tov: number;
+  ftm: number;
+  fta: number;
+  pf: number;
 }
 
 export type GameEvent =
@@ -156,7 +164,9 @@ export type GameEvent =
   | { type: 'buzzer' }
   | { type: 'jump'; player: number }
   | { type: 'rejected'; reason: string }
-  | { type: 'switch'; player: number };
+  | { type: 'switch'; player: number }
+  | { type: 'foul'; team: TeamId; player: number; victim: number; kind: 'shooting' | 'reach'; shots: number; teamFouls: number }
+  | { type: 'freeThrows'; shooter: number; total: number };
 
 export interface HumanInput {
   /** World-space desired move direction (magnitude 0..1). */

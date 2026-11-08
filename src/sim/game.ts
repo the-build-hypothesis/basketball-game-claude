@@ -6,6 +6,8 @@ import {
   BALL_SUBSTEPS,
   BLOCK_JUMP_HEIGHT,
   DRIBBLE_SPEED_MULT,
+  FT_LINE_FROM_BASELINE,
+  KEY_W,
   GRAVITY,
   HALF_L,
   HALF_W,
@@ -56,7 +58,7 @@ export const DEFAULT_CONFIG: GameConfig = {
 };
 
 function emptyStats(): TeamStats {
-  return { pts: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, oreb: 0, dreb: 0, stl: 0, blk: 0, tov: 0 };
+  return { pts: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, oreb: 0, dreb: 0, stl: 0, blk: 0, tov: 0, ftm: 0, fta: 0, pf: 0 };
 }
 
 export interface DeadballInfo {
@@ -64,7 +66,22 @@ export interface DeadballInfo {
   team: TeamId;
   spot: V2;
   inbounder: number;
+  /** Same team keeps the ball (e.g. defensive foul / ball kicked out): shot clock is not fully reset. */
+  keepShotClock?: boolean;
 }
+
+export interface FreeThrowState {
+  shooter: number;
+  team: TeamId;
+  total: number;
+  attempt: number;
+  t: number;
+  released: boolean;
+  releasedT: number;
+}
+
+/** Team fouls per period at which the opponent shoots two free throws on any foul. */
+export const BONUS_FOULS = 5;
 
 export class Game {
   config: GameConfig;
@@ -109,6 +126,11 @@ export class Game {
   private prevShootHeld = false;
   /** Multiplier on random shot error (1 = normal). Tests use 0 for deterministic aim. */
   shotErrorScale = 1;
+  /** Multiplier on foul probabilities (1 = normal). */
+  foulRate = 1;
+  teamFouls: [number, number] = [0, 0];
+  ft: FreeThrowState | null = null;
+  private pendingFT: { shooter: number; n: number } | null = null;
 
   constructor(config: Partial<GameConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -224,6 +246,9 @@ export class Game {
     this.buzzerPending = false;
     this.deadball = null;
     this.inbound = null;
+    this.ft = null;
+    this.pendingFT = null;
+    this.teamFouls = [0, 0];
     for (const p of this.players) {
       p.action = null;
       p.vel.x = p.vel.z = 0;
@@ -377,7 +402,10 @@ export class Game {
     this.ball.flightKind = null;
     this.activeShot = null;
     this.possession = info.team;
-    this.shotClock = SHOT_CLOCK;
+    if (info.keepShotClock) {
+      // defensive foul: at least 14; ball out off the defense: clock continues
+      this.shotClock = info.reason === 'foul' ? Math.max(this.shotClock, SHOT_CLOCK_OREB) : Math.max(this.shotClock, 1);
+    } else this.shotClock = SHOT_CLOCK;
     this.shotClockFrozen = false;
     this.lastTouchTeam = info.team;
     if (this.isHumanTeam(info.team)) this.setControlled(inb.id);
@@ -388,7 +416,8 @@ export class Game {
   private startDeadball(reason: string, team: TeamId, spot: V2): void {
     const cands = this.teamPlayers(team);
     const inb = this.nearestPlayer(cands, spot);
-    this.deadball = { reason, team, spot, inbounder: inb.id };
+    const keep = (reason === 'oob' || reason === 'foul') && this.possession === team && !this.shotClockFrozen;
+    this.deadball = { reason, team, spot, inbounder: inb.id, keepShotClock: keep };
     this.phase = 'deadball';
     this.phaseT = 0;
     this.possession = team;
@@ -502,11 +531,13 @@ export class Game {
   }
 
   startShot(p: Player, autoRelease = Infinity): boolean {
-    if (this.ball.owner !== p.id || this.ball.state !== 'held' || this.phase !== 'live') return false;
+    if (this.ball.owner !== p.id || this.ball.state !== 'held') return false;
+    const ftShot = this.phase === 'freethrow' && !!this.ft && this.ft.shooter === p.id && !this.ft.released;
+    if (this.phase !== 'live' && !ftShot) return false;
     if (p.action && p.action.kind === 'shoot') return false;
     const bx = attackBasketX(p.team);
     const d = len2(bx - p.pos.x, p.pos.z);
-    const layup = d < LAYUP_RANGE;
+    const layup = !ftShot && d < LAYUP_RANGE;
     const a: ShootAction = {
       kind: 'shoot',
       t: 0,
@@ -515,8 +546,9 @@ export class Game {
       autoRelease,
       fromX: p.pos.x,
       fromZ: p.pos.z,
-      jumped: false,
+      jumped: ftShot,
       meterAtRelease: 0,
+      ft: ftShot,
     };
     p.action = a;
     p.facing = Math.atan2(-p.pos.z, bx - p.pos.x);
@@ -553,18 +585,20 @@ export class Game {
     const toR = norm2(bx - p.pos.x, -p.pos.z);
     const hand: V3 = {
       x: p.pos.x + toR.x * (a.layup ? 0.35 : 0.2),
-      y: p.pos.y + (a.layup ? 2.55 : 2.4),
+      y: p.pos.y + (a.layup ? 2.55 : a.ft ? 2.3 : 2.4),
       z: p.pos.z + toR.z * (a.layup ? 0.35 : 0.2),
     };
     const d = len2(rim.x - hand.x, rim.z - hand.z);
-    const points: 2 | 3 = a.layup ? 2 : shotPointValue(a.fromX, a.fromZ, bx);
+    const points: 1 | 2 | 3 = a.ft ? 1 : a.layup ? 2 : shotPointValue(a.fromX, a.fromZ, bx);
+    // shooting foul? (decided at release from defender proximity / contact)
+    const fouler = a.ft ? null : this.shootingFoul(p, a.layup);
     const ae = Math.abs(e);
     const label = ae < 0.035 ? 'PERFECT' : ae < 0.09 ? 'GOOD' : e < 0 ? 'EARLY' : 'LATE';
-    const contest = this.contestLevel(p);
+    const contest = a.ft ? 0 : this.contestLevel(p);
     const base = a.layup ? 0.028 + 0.01 * d : 0.03 + 0.011 * d;
     const tm = Math.min(a.layup ? 0.7 + 2.2 * ae : 0.55 + 5 * ae, 4.5);
     const fatigue = 1 + (1 - p.stamina) * 0.25;
-    const sigma = ((base * tm * (1 + 0.9 * contest) * fatigue) / p.shootRating) * this.shotErrorScale;
+    const sigma = ((base * tm * (1 + 0.9 * contest) * fatigue * (fouler ? 1.6 : 1)) / p.shootRating) * this.shotErrorScale;
     const bias = e * (a.layup ? 0.2 : 0.85);
     const depthErr = 0.035 + bias + this.rng.normal() * sigma;
     const latErr = this.rng.normal() * sigma * 0.75;
@@ -574,7 +608,7 @@ export class Game {
       y: RIM_H,
       z: rim.z + toR.z * depthErr + perp.z * latErr,
     };
-    let angle = a.layup ? 1.08 : 0.86 + clamp((d - 5) * 0.012, -0.06, 0.08);
+    let angle = a.layup ? 1.08 : a.ft ? 0.9 : 0.86 + clamp((d - 5) * 0.012, -0.06, 0.08);
     let vel = solveLaunch(hand, target, angle);
     while (!vel && angle < 1.45) {
       angle += 0.05;
@@ -595,11 +629,13 @@ export class Game {
       team: p.team,
       points,
       layup: a.layup,
+      ft: a.ft,
+      fouledBy: fouler ? fouler.id : -1,
       dist: d,
       label,
       contest,
       releaseClock: this.gameClock,
-      valid: this.phase === 'live' && this.gameClock > 0,
+      valid: a.ft || (this.phase === 'live' && this.gameClock > 0),
       touchedRim: false,
       touchedBoard: false,
       scored: false,
@@ -609,9 +645,150 @@ export class Game {
       blockRolled: new Set(),
     };
     const st = this.stats[p.team];
-    st.fga++;
-    if (points === 3) st.tpa++;
+    if (a.ft) st.fta++;
+    else {
+      st.fga++;
+      if (points === 3) st.tpa++;
+    }
     this.emit({ type: 'shotRelease', team: p.team, label, points, shooter: p.id, meter, contest });
+    if (fouler) this.callFoul(fouler, p, 'shooting', points);
+    if (a.ft && this.ft) {
+      this.ft.released = true;
+      this.ft.releasedT = 0;
+      // the last free throw is a live ball
+      if (this.ft.attempt >= this.ft.total) {
+        this.phase = 'live';
+        this.phaseT = 0;
+        this.ft = null;
+        this.shotClock = SHOT_CLOCK;
+      }
+    }
+  }
+
+  /** Decide whether a defender fouls the shooter on release. */
+  private shootingFoul(p: Player, layup: boolean): Player | null {
+    let best: Player | null = null;
+    let bestC = 0;
+    for (const q of this.opponents(p.team)) {
+      const dx = p.pos.x - q.pos.x;
+      const dz = p.pos.z - q.pos.z;
+      const d = len2(dx, dz);
+      if (d > 0.9) continue;
+      let c = 0;
+      if (q.pos.y > 0.05) c = 0.22 + (0.9 - d) * 0.9; // jumped into the shooter
+      const closing = (q.vel.x * dx + q.vel.z * dz) / Math.max(d, 1e-3);
+      if (closing > 1.8) c = Math.max(c, 0.2 + (closing - 1.8) * 0.1);
+      if (layup) c += 0.06;
+      if (c > bestC) {
+        bestC = c;
+        best = q;
+      }
+    }
+    if (best && this.rng.chance(Math.min(0.85, bestC * this.foulRate))) return best;
+    return null;
+  }
+
+  /** Register a foul by `fouler` on `victim`. */
+  private callFoul(fouler: Player, victim: Player, kind: 'shooting' | 'reach', shotPoints = 2): void {
+    this.teamFouls[fouler.team]++;
+    this.stats[fouler.team].pf++;
+    const bonus = this.teamFouls[fouler.team] >= BONUS_FOULS;
+    const shots = kind === 'shooting' ? shotPoints : bonus ? 2 : 0;
+    this.emit({
+      type: 'foul',
+      team: fouler.team,
+      player: fouler.id,
+      victim: victim.id,
+      kind,
+      shots,
+      teamFouls: this.teamFouls[fouler.team],
+    });
+    if (kind === 'reach') {
+      if (bonus) this.pendingFT = { shooter: victim.id, n: 2 };
+      else this.startDeadball('foul', victim.team, this.sidelineSpot(victim.pos.x, victim.pos.z));
+    }
+    // shooting fouls award free throws once the shot is resolved (see resolveMiss / handleBasket)
+  }
+
+  /** Set up a trip to the line (explicit reset of player positions into free-throw formation). */
+  startFreeThrows(shooterId: number, n: number): void {
+    const sh = this.players[shooterId];
+    const team = sh.team;
+    const s = attackSign(team);
+    this.phase = 'freethrow';
+    this.phaseT = 0;
+    this.deadball = null;
+    this.inbound = null;
+    this.activeShot = null;
+    this.buzzerPending = false;
+    this.possession = team;
+    this.ft = { shooter: shooterId, team, total: n, attempt: 1, t: 0, released: false, releasedT: 0 };
+    const laneX = [2.2, 3.1, 4.0].map((u) => s * (HALF_L - u));
+    const laneZ = KEY_W / 2 + 0.45;
+    const defSpots: V2[] = [
+      { x: laneX[0], z: laneZ },
+      { x: laneX[0], z: -laneZ },
+      { x: laneX[2], z: laneZ },
+      { x: s * (HALF_L - 9.6), z: 2.6 },
+      { x: s * (HALF_L - 10.5), z: -3.5 },
+    ];
+    const offSpots: V2[] = [
+      { x: laneX[1], z: laneZ },
+      { x: laneX[1], z: -laneZ },
+      { x: s * (HALF_L - 9.4), z: -1.8 },
+      { x: s * (HALF_L - 10.2), z: 4.5 },
+    ];
+    let oi = 0;
+    for (const p of this.players) {
+      p.action = null;
+      p.vel.x = p.vel.z = 0;
+      p.pos.y = 0;
+      p.vy = 0;
+      let spot: V2;
+      if (p.id === shooterId) spot = { x: s * (HALF_L - FT_LINE_FROM_BASELINE - 0.3), z: 0 };
+      else if (p.team === team) spot = offSpots[oi++ % offSpots.length];
+      else spot = defSpots[p.role % 5];
+      p.pos.x = spot.x;
+      p.pos.z = spot.z;
+      p.facing = Math.atan2(-p.pos.z, attackBasketX(team) - p.pos.x);
+    }
+    this.giveBallForFT();
+    if (this.isHumanTeam(team)) this.setControlled(shooterId);
+    this.emit({ type: 'freeThrows', shooter: shooterId, total: n });
+  }
+
+  private giveBallForFT(): void {
+    const ft = this.ft!;
+    const b = this.ball;
+    b.state = 'held';
+    b.owner = ft.shooter;
+    b.flightKind = null;
+    b.vel = { x: 0, y: 0, z: 0 };
+    this.activeShot = null;
+    this.lastTouchTeam = ft.team;
+  }
+
+  private updateFreeThrow(dt: number): void {
+    const ft = this.ft!;
+    ft.t += dt;
+    const p = this.players[ft.shooter];
+    if (!ft.released) {
+      const human = this.isHumanControlled(p);
+      const giveUpAt = human ? 9 : 1.4;
+      if (!p.action && ft.t > giveUpAt) {
+        const prm = aiParams(this, p.team);
+        this.startShot(p, human ? SHOT_IDEAL + 0.25 : SHOT_IDEAL + this.rng.normal() * prm.timingSigma);
+      }
+      return;
+    }
+    ft.releasedT += dt;
+    const s = this.activeShot;
+    if ((s && s.resolved && ft.releasedT > 1.0) || ft.releasedT > 3.0) {
+      ft.attempt++;
+      ft.released = false;
+      ft.t = 0;
+      this.giveBallForFT();
+    }
   }
 
   doPass(p: Player, to: Player): void {
@@ -694,7 +871,11 @@ export class Game {
     if (h.action && h.action.kind === 'shoot') prob *= 0.5;
     if (h.sprinting) prob *= 1.2;
     prob *= h.team === this.config.humanTeam ? 1 : 1.05;
-    if (!this.rng.chance(prob)) return false;
+    if (!this.rng.chance(prob)) {
+      // reaching in can draw a foul
+      if (d < 1.15 && this.rng.chance(0.14 * this.foulRate)) this.callFoul(p, h, 'reach');
+      return false;
+    }
     // knock the ball loose toward the defender
     const b = this.ball;
     const dir = norm2(p.pos.x - h.pos.x, p.pos.z - h.pos.z);
@@ -734,6 +915,7 @@ export class Game {
     if (this.phase === 'live') this.updateClocks(dt);
     if (this.phase === 'deadball') this.updateDeadball();
     if (this.phase === 'inbound') this.updateInbound(dt);
+    if (this.phase === 'freethrow') this.updateFreeThrow(dt);
 
     this.updateHuman(dt);
     for (const p of this.players) {
@@ -745,6 +927,12 @@ export class Game {
     if (this.phase === 'tipoff') this.updateTipoff();
     this.updateBall(dt);
     this.watchdog(dt);
+    const ph = this.phase as Phase; // may have changed during this step
+    if (this.pendingFT && ph !== 'final' && ph !== 'quarterEnd') {
+      const f = this.pendingFT;
+      this.pendingFT = null;
+      this.startFreeThrows(f.shooter, f.n);
+    }
     this.input.passPressed = false;
     this.input.switchPressed = false;
     this.input.stealPressed = false;
@@ -801,6 +989,13 @@ export class Game {
     if (this.phase === 'tipoff') {
       if (pressed && p.role === 4 && this.jump(p, 0.7)) this.tipJumpTime = this.phaseT;
       p.intent.mx = p.intent.mz = 0;
+      return;
+    }
+    if (this.phase === 'freethrow') {
+      p.intent.mx = p.intent.mz = 0;
+      const ft = this.ft;
+      if (hasBall && ft && ft.shooter === p.id && !ft.released && pressed && !p.action) this.startShot(p);
+      if (p.action && p.action.kind === 'shoot' && !p.action.released && released) this.releaseShot(p);
       return;
     }
     if (inp.switchPressed) this.switchPlayer();
@@ -1117,13 +1312,20 @@ export class Game {
     if (shot.resolved) return;
     shot.resolved = true;
     if (!blocked) this.emit({ type: 'miss', team: shot.team, airball: !shot.touchedRim && !shot.touchedBoard });
+    if (shot.fouledBy >= 0 && !shot.ft) {
+      // fouled on a missed shot: 2 or 3 free throws
+      this.buzzerPending = false;
+      this.pendingFT = { shooter: shot.shooter, n: shot.points };
+      return;
+    }
     if (this.buzzerPending) this.endQuarter();
   }
 
   private handleBasket(k: number): void {
     const team: TeamId = k === 0 ? 0 : 1;
     const shot = this.activeShot;
-    if (this.phase !== 'live') {
+    const ftLive = this.phase === 'freethrow' && !!shot && shot.ft && !shot.scored;
+    if (this.phase !== 'live' && !ftLive) {
       if (this.phase !== 'deadball' && this.phase !== 'final' && this.phase !== 'quarterEnd') this.emit({ type: 'rejected', reason: 'play stopped' });
       return;
     }
@@ -1151,12 +1353,22 @@ export class Game {
     const st = this.stats[team];
     st.pts += points;
     if (shooter >= 0) {
-      st.fgm++;
-      if (points === 3) st.tpm++;
+      if (shot && shot.ft) st.ftm++;
+      else {
+        st.fgm++;
+        if (points === 3) st.tpm++;
+      }
     }
     this.ball.state = 'dead';
-    this.emit({ type: 'score', team, points, shooter, label });
+    this.emit({ type: 'score', team, points, shooter, label: shot && shot.ft ? 'FT' : label });
     if (shot && !shot.touchedRim && !shot.touchedBoard) this.emit({ type: 'swish' });
+    if (this.phase === 'freethrow') return; // more free throws to come
+    if (shot && shot.fouledBy >= 0 && shot.team === team) {
+      // and-one: one free throw (taken even if the buzzer sounded)
+      this.buzzerPending = false;
+      this.pendingFT = { shooter: shot.shooter, n: 1 };
+      return;
+    }
     if (this.buzzerPending) {
       this.endQuarter();
       return;
@@ -1222,7 +1434,7 @@ export class Game {
     this.looseT = 0;
     if (shot) {
       if (!shot.resolved) this.resolveMiss(shot);
-      if (!shot.scored) {
+      if (!shot.scored && shot.fouledBy < 0) {
         const off = shot.team === p.team;
         if (off) this.stats[p.team].oreb++;
         else this.stats[p.team].dreb++;

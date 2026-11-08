@@ -86,6 +86,22 @@ kbd {
   font-size: 17px;
   letter-spacing: 1px;
 }
+.tname {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+}
+.tfouls {
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.8;
+  letter-spacing: 0.5px;
+}
+.tfouls.bonus {
+  color: var(--accent);
+  opacity: 1;
+}
 .tscore {
   font-size: 34px;
   min-width: 48px;
