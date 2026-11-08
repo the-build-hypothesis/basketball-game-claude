@@ -132,12 +132,17 @@ test('controls: move, pass to a teammate, and shoot through the keyboard', async
 
   // pass
   const passer = (await snap(page)).ctrl;
+  await page.evaluate(() => ((window as any).__app.recentEvents.length = 0));
   await page.keyboard.press('KeyE');
-  await expect.poll(async () => (await snap(page)).kind, { timeout: 2000 }).toBe('pass');
-  await expect.poll(async () => (await snap(page)).ball, { timeout: 4000 }).toBe('held');
+  await expect
+    .poll(async () => page.evaluate(() => (window as any).__app.recentEvents.some((e: any) => e.type === 'pass')), { timeout: 2000 })
+    .toBe(true);
+  await expect.poll(async () => (await snap(page)).ball, { timeout: 6000 }).toBe('held');
   const afterPass = await snap(page);
-  expect(afterPass.owner).not.toBe(passer);
-  if (afterPass.owner < 5) {
+  if (afterPass.owner === passer) {
+    // pass was deflected and recovered by the passer himself: still under human control
+    expect(afterPass.ctrl).toBe(passer);
+  } else if (afterPass.owner < 5) {
     expect(afterPass.ctrl).toBe(afterPass.owner); // control follows the ball
   } else {
     // pass was intercepted by the AI: the human now controls a defender

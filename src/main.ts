@@ -40,6 +40,8 @@ class App {
   input = new Input();
   sfx = new Sfx();
   replay = new Replay();
+  /** Rolling log of recent game events (debugging / automated tests). */
+  recentEvents: Array<{ type: string; [k: string]: unknown }> = [];
   quality: Quality = 'high';
   cameraMode: CameraMode = 'broadcast';
   config: GameConfig = { quarterLength: 120, quarters: 4, difficulty: 'normal', humanTeam: 0, seed: 1 };
@@ -281,6 +283,10 @@ class App {
         if (r.done) this.endReplay();
       }
       const events = g.drainEvents();
+      if (events.length) {
+        for (const e of events) if (e.type !== 'dribble') this.recentEvents.push(e);
+        if (this.recentEvents.length > 300) this.recentEvents.splice(0, this.recentEvents.length - 300);
+      }
       for (const e of events) {
         if (e.type === 'score' && e.label !== 'FT' && this.state === 'playing') {
           this.replay.markScore(e.team === 0 ? BASKET_X : -BASKET_X);
