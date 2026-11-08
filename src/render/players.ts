@@ -97,7 +97,7 @@ export class PlayerView {
     this.torso.position.y = 1.36;
     this.torso.scale.z = 0.72;
     this.body.add(this.torso);
-    const shoulders = cyl(0.13, 0.13, 0.5, skinMat, 8);
+    const shoulders = cyl(0.135, 0.135, 0.56, skinMat, 8);
     shoulders.rotation.x = Math.PI / 2;
     shoulders.position.y = 1.6;
     shoulders.scale.set(1, 1, 0.8);
@@ -116,6 +116,15 @@ export class PlayerView {
     hair.position.set(-0.01, 0.135, 0);
     hair.scale.set(1, 0.85, 0.97);
     this.head.add(hair);
+    // eyes (face forward = +x)
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x15100c });
+    this.disposables.push(eyeMat);
+    for (const ez of [-0.042, 0.042]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.016, 6, 4), eyeMat);
+      this.disposables.push(eye.geometry);
+      eye.position.set(0.108, 0.115, ez);
+      this.head.add(eye);
+    }
     const band = cyl(0.122, 0.122, 0.03, trimMat, 14);
     band.position.y = 0.15;
     if (p.role % 2 === 0) this.head.add(band);
