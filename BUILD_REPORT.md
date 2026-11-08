@@ -19,7 +19,7 @@ and an end-of-game box score.
 Everything visual and audible is generated procedurally in code. No external art, model, audio or
 font files ship, so there is no third-party asset licensing exposure.
 
-**Validation:** 49 unit tests (Vitest), including several complete headless AI-vs-AI and
+**Validation:** 52 unit tests (Vitest), including several complete headless AI-vs-AI and
 human-input matches, and 12 Playwright browser tests. All pass both locally and against the
 production URL (section 6).
 
@@ -126,13 +126,13 @@ the bundle, with its license banner preserved.
 Commands: `npm test` (unit), `npm run test:e2e` (browser, local preview),
 `BASE_URL=<prod url> npm run test:e2e` (production).
 
-**Unit tests (Vitest): 49 passed / 0 failed** (`tests/unit/`, ~45 s)
+**Unit tests (Vitest): 52 passed / 0 failed** (`tests/unit/`, ~45 s)
 
 | Suite | Covers |
 |---|---|
 | `scoring.test.ts` (22) | 3-pt geometry (arc, corner, both baskets). Made 2 adds exactly 2 and gives the opponent the ball. Made 3 and corner 3 add exactly 3. AI team scores into its own basket. Early release misses. Late half-court heave misses. No double counting over 10 s. Ball through the rim while play is stopped is rejected. Ball dropped through the hoop scores by geometry. Ball beside the rim does not. Defensive/offensive rebound possession and shot clock (24/14). Steal, interception, completed pass (ball travels and control follows). Loose ball out of bounds and inbound. Shot-clock violation. Made basket leads to opponent inbound and back to live. Lost-ball-mid-gather guard. Human sprint dunk = 2. AI center dunk. A pass into a defender who fails to intercept deflects off his body |
 | `match.test.ts` (18) | Q4 clock expiry leads to `final` with the correct score and no scoring afterwards. Tie leads to overtime. Q1 to Q2 transition. Buzzer-beater counts. Movement. Sprint is faster and drains stamina. Shoot press/release. Directional pass. Switch picks the defender nearest the ball. Auto-switch on possession change. Defensive jump. Restart is clean (0-0, Q1, full clock, tip-off). Same seed gives an identical match (determinism). **Five full AI-vs-AI matches** finish, with no NaN or out-of-arena positions, loose ball < 10.5 s, and no non-live phase > 10 s |
-| `fouls.test.ts` (5) | FTs worth exactly 1, last FT live. Shooting foul on a missed 2 gives 2 FTs. Reach-in before the bonus gives a side inbound, in the bonus 2 FTs. Team fouls reset per quarter. No fouls on open shots |
+| `fouls.test.ts` (8) | FTs worth exactly 1, last FT live, game clock held while the last FT is in the air. Post-buzzer shot out of bounds ends the game exactly once. Fouled shot out of bounds gives FTs and no turnover. Shooting foul on a missed 2 gives 2 FTs. Reach-in before the bonus gives a side inbound, in the bonus 2 FTs. Team fouls reset per quarter. No fouls on open shots |
 | `human.test.ts` (4) | A full match with an idle human, and three full matches with a random button-mashing human, all through the real human-input path. Each reaches `final` with no stalls and a valid controlled player |
 
 **Browser tests (Playwright, Chromium 1254, software GL): 12 passed / 0 failed**, run against
@@ -170,6 +170,18 @@ play with real keyboard events and visual inspection of screenshots (`docs/scree
   percentage collapsing to ~27% after a timing-bias change (fixed by tightening AI release timing,
   lowering the AI's three-point valuation and easing the contest penalty); a missing import caught
   by the in-game error screen during replay testing.
+- **Independent code review:** a separate review agent read the simulation code and fuzzed 62 full
+  matches (AI vs AI, random human input, idle human) with per-step invariants: no NaN, a valid
+  controlled player, possession matching the ball owner, the scoreboard matching score events, no
+  scoring or clock movement while play is stopped, bounded phases, exactly one `final`. It found
+  no stuck states, crashes or double scoring, and four real edge-case defects, all now fixed with
+  regression tests:
+  1. A post-buzzer shot that landed out of bounds briefly restarted play and emitted `final` twice.
+  2. The game clock ran while the last free throw was in the air.
+  3. A fouled shot landing out of bounds was also charged as a turnover.
+  4. The defensive auto-switch at inbounds used a stale ball position.
+
+  After the fixes, a 30-match re-fuzz showed zero invariant violations.
 
 ## 8. Performance measurements and limitations
 
@@ -403,3 +415,4 @@ Session start 01:04 (local time, 2026-11-08). Times are from commits and logs.
 | Fouls and free throws | 01:43 |
 | Dunks, docs | ~02:00 |
 | Body collisions, instant replay, pick-and-roll, rebalance | 02:05–02:20 |
+| Independent review fixes, final production validation | ~02:45 |
