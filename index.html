@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fastbreak Five — 3D Basketball</title>
+    <meta name="description" content="A browser-based 3D five-on-five basketball game." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%23d4621c' stroke='%23000' stroke-width='3'/%3E%3Cpath d='M4 32h56M32 4v56M12 12c10 10 10 30 0 40M52 12c-10 10-10 30 0 40' stroke='%23000' stroke-width='3' fill='none'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="canvas-host"></div>
+
+      <div id="hud" class="hidden" aria-live="polite">
+        <div id="scoreboard">
+          <div class="team home">
+            <span class="poss" id="poss0">◀</span>
+            <span class="tname">HERONS</span>
+            <span class="tscore" id="score0">0</span>
+          </div>
+          <div class="clockbox">
+            <div class="quarter" id="quarter">Q1</div>
+            <div class="clock" id="clock">2:00</div>
+            <div class="shotclock" id="shotclock">24</div>
+          </div>
+          <div class="team away">
+            <span class="tscore" id="score1">0</span>
+            <span class="tname">COYOTES</span>
+            <span class="poss" id="poss1">▶</span>
+          </div>
+        </div>
+        <div id="possession-label"></div>
+        <div id="toasts"></div>
+        <div id="shotmeter" class="hidden">
+          <div class="meter-bar"><div class="meter-zone"></div><div class="meter-fill" id="meter-fill"></div></div>
+          <div class="meter-label" id="meter-label"></div>
+        </div>
+        <div id="playerinfo">
+          <div id="pi-name">—</div>
+          <div class="stamina"><div id="pi-stamina"></div></div>
+          <div id="pi-role"></div>
+        </div>
+        <div id="controls-hint">
+          <div class="ch-title">CONTROLS <span class="dim">(H to hide)</span></div>
+          <div><kbd>WASD</kbd>/<kbd>Arrows</kbd> move · <kbd>Shift</kbd> sprint</div>
+          <div><kbd>Space</kbd> hold &amp; release: shoot · on D: jump/block</div>
+          <div><kbd>E</kbd> pass (aim with move keys)</div>
+          <div><kbd>F</kbd> steal · <kbd>Tab</kbd>/<kbd>Q</kbd> switch player</div>
+          <div><kbd>C</kbd> camera · <kbd>M</kbd> mute · <kbd>Esc</kbd> pause</div>
+        </div>
+        <div id="fps" class="hidden"></div>
+      </div>
+
+      <div id="loading" class="overlay">
+        <div class="panel small">
+          <div class="spinner"></div>
+          <div>Loading arena…</div>
+        </div>
+      </div>
+
+      <div id="menu" class="overlay hidden">
+        <div class="panel">
+          <h1>FASTBREAK <span>FIVE</span></h1>
+          <p class="sub">5-on-5 3D basketball · <b>Harbor City Herons</b> (you) vs <b>Mesa Ridge Coyotes</b> (CPU)</p>
+          <div class="opts">
+            <label>Quarter length
+              <select id="opt-quarter">
+                <option value="60">1 minute</option>
+                <option value="120" selected>2 minutes</option>
+                <option value="180">3 minutes</option>
+                <option value="300">5 minutes</option>
+                <option value="720">12 minutes</option>
+              </select>
+            </label>
+            <label>Difficulty
+              <select id="opt-diff">
+                <option value="easy">Easy</option>
+                <option value="normal" selected>Normal</option>
+                <option value="hard">Hard</option>
+              </select>
+            </label>
+            <label>Camera
+              <select id="opt-cam">
+                <option value="broadcast" selected>Broadcast</option>
+                <option value="follow">Follow</option>
+              </select>
+            </label>
+            <label>Graphics
+              <select id="opt-quality">
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high" selected>High</option>
+              </select>
+            </label>
+          </div>
+          <button id="btn-start" class="primary">START GAME</button>
+          <div class="controls-table">
+            <div><kbd>WASD</kbd> / <kbd>Arrows</kbd></div><div>Move (camera-relative)</div>
+            <div><kbd>Shift</kbd></div><div>Sprint (uses stamina)</div>
+            <div><kbd>Space</kbd> / <kbd>J</kbd></div><div>Offense: hold to rise, release at the top of the meter (green) to shoot. Defense: jump / block</div>
+            <div><kbd>E</kbd> / <kbd>K</kbd></div><div>Pass — to the teammate in the direction you hold (marker shows target)</div>
+            <div><kbd>F</kbd> / <kbd>L</kbd></div><div>Steal attempt</div>
+            <div><kbd>Tab</kbd> / <kbd>Q</kbd></div><div>Switch to the defender nearest the ball</div>
+            <div><kbd>C</kbd> · <kbd>M</kbd> · <kbd>H</kbd></div><div>Toggle camera · mute · controls overlay</div>
+            <div><kbd>Esc</kbd> / <kbd>P</kbd></div><div>Pause</div>
+            <div>Gamepad</div><div>L-stick move · A shoot · B pass · X steal · Y switch · RT sprint · Start pause</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="pause" class="overlay hidden">
+        <div class="panel small">
+          <h2>PAUSED</h2>
+          <button id="btn-resume" class="primary">Resume</button>
+          <button id="btn-restart">Restart match</button>
+          <button id="btn-quit">Main menu</button>
+          <p class="dim">Esc to resume · Game auto-pauses when the window loses focus.</p>
+        </div>
+      </div>
+
+      <div id="final" class="overlay hidden">
+        <div class="panel">
+          <h2 id="final-title">FINAL</h2>
+          <div id="final-score"></div>
+          <table id="final-stats"></table>
+          <button id="btn-again" class="primary">Play again</button>
+          <button id="btn-menu">Main menu</button>
+        </div>
+      </div>
+
+      <div id="error" class="overlay hidden">
+        <div class="panel small">
+          <h2>Something went wrong</h2>
+          <pre id="error-msg"></pre>
+          <button id="btn-reload" class="primary">Reload</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
