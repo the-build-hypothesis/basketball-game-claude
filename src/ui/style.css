@@ -289,6 +289,18 @@ kbd {
   letter-spacing: 1px;
   color: var(--accent);
 }
+#replay-banner {
+  position: absolute;
+  top: 130px;
+  left: 24px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #ff4d4d;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 6px 14px;
+  border-radius: 6px;
+  animation: toastIn 0.3s ease-out;
+}
 #fps {
   position: absolute;
   left: 18px;

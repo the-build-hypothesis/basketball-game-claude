@@ -7,9 +7,10 @@ import type { Quality } from './render/scene';
 import { Hud } from './ui/hud';
 import { Input } from './ui/input';
 import { Sfx } from './ui/audio';
-import { TEAM_SHORT } from './sim/constants';
+import { BASKET_X, TEAM_SHORT } from './sim/constants';
+import { Replay } from './ui/replay';
 
-type AppState = 'loading' | 'menu' | 'playing' | 'paused' | 'final' | 'error';
+type AppState = 'loading' | 'menu' | 'playing' | 'paused' | 'replay' | 'final' | 'error';
 
 const $ = (id: string) => document.getElementById(id)!;
 const show = (id: string, v: boolean) => $(id).classList.toggle('hidden', !v);
@@ -38,6 +39,7 @@ class App {
   hud = new Hud();
   input = new Input();
   sfx = new Sfx();
+  replay = new Replay();
   quality: Quality = 'high';
   cameraMode: CameraMode = 'broadcast';
   config: GameConfig = { quarterLength: 120, quarters: 4, difficulty: 'normal', humanTeam: 0, seed: 1 };
@@ -123,6 +125,7 @@ class App {
     this.game.startMatch();
     this.view.attach(this.game);
     this.hud.clearToasts();
+    this.replay.reset();
     this.hud.show(true);
     show('menu', false);
     show('pause', false);
@@ -160,7 +163,17 @@ class App {
     this.acc = 0;
     this.sfx.resume();
   }
+  endReplay(): void {
+    if (this.state !== 'replay') return;
+    this.replay.stop(this.game);
+    this.view.replayBasketX = null;
+    show('replay-banner', false);
+    this.state = 'playing';
+    this.acc = 0;
+  }
+
   autoPause(): void {
+    if (this.state === 'replay') this.endReplay();
     if (this.state === 'playing') this.pause();
   }
 
@@ -206,6 +219,19 @@ class App {
       this.cameraMode = this.cameraMode === 'broadcast' ? 'follow' : 'broadcast';
       this.view.cameraMode = this.cameraMode;
     }
+    if (this.state === 'replay') {
+      if (s.replay || s.pause) this.endReplay();
+      return;
+    }
+    if (s.replay && this.state === 'playing') {
+      const ph = this.game.phase;
+      if ((ph === 'deadball' || ph === 'inbound') && this.replay.start(this.game)) {
+        this.state = 'replay';
+        this.view.replayBasketX = this.replay.basketX;
+        show('replay-banner', true);
+        return;
+      }
+    }
     if (s.pause) {
       if (this.state === 'playing') this.pause();
       else if (this.state === 'paused') this.resume();
@@ -245,14 +271,31 @@ class App {
           g.startMatch();
         }
       }
+      if (this.state === 'playing') this.replay.record(g, dt);
+      if (this.state === 'replay') {
+        const r = this.replay.update(g, dt);
+        if (r.atScore) {
+          const net = this.view.arena.nets.find((n) => Math.sign(n.x) === Math.sign(this.replay.basketX));
+          if (net) net.swishT = 0.9;
+        }
+        if (r.done) this.endReplay();
+      }
       const events = g.drainEvents();
+      for (const e of events) {
+        if (e.type === 'score' && e.label !== 'FT' && this.state === 'playing') {
+          this.replay.markScore(e.team === 0 ? BASKET_X : -BASKET_X);
+          window.setTimeout(() => {
+            if (this.state === 'playing' && this.replay.available()) this.hud.toast('Press R for instant replay', '', true, 2.5);
+          }, 1300);
+        }
+      }
       if (this.state === 'playing' || this.state === 'final') {
         this.hud.onEvents(events, g);
         this.sfx.onEvents(events, g.config.humanTeam);
       }
       this.view.onEvents(events);
       this.view.render(this.state === 'paused' ? 0 : dt, now / 1000);
-      if (this.state === 'playing' || this.state === 'paused' || this.state === 'final') this.hud.update(g, dt);
+      if (this.state === 'playing' || this.state === 'paused' || this.state === 'final' || this.state === 'replay') this.hud.update(g, dt);
       // anchor the shot meter beside the controlled player
       if (g.controlled >= 0 && this.state === 'playing') {
         const p = g.players[g.controlled];

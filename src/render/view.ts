@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BALL_R, HALF_L } from '../sim/constants';
+import { BALL_R, HALF_L, HALF_W } from '../sim/constants';
 import type { Game } from '../sim/game';
 import type { GameEvent } from '../sim/types';
 import { buildArena, type Arena, type Quality } from './scene';
@@ -18,6 +18,8 @@ export class GameView {
   ctrlArrow: THREE.Mesh;
   passMarker: THREE.Mesh;
   cameraMode: CameraMode = 'broadcast';
+  /** When set, a low baseline replay camera looks at the play near this basket x. */
+  replayBasketX: number | null = null;
   private camPos = new THREE.Vector3(0, 11, 18);
   private camLook = new THREE.Vector3(0, 0.5, 0);
   private game: Game | null = null;
@@ -110,6 +112,16 @@ export class GameView {
     const g = this.game!;
     const b = g.ball.pos;
     const ctrl = g.controlled >= 0 ? g.players[g.controlled] : null;
+    if (this.replayBasketX !== null) {
+      const s = Math.sign(this.replayBasketX) || 1;
+      // courtside corner camera on the near side, framing the ball and the rim it is going to
+      const rimX = this.replayBasketX;
+      const midX = b.x * 0.5 + rimX * 0.5;
+      return {
+        pos: new THREE.Vector3(s * (HALF_L - 1.5), 3.0, HALF_W + 4.5),
+        look: new THREE.Vector3(midX, 2.0, b.z * 0.4),
+      };
+    }
     if (this.cameraMode === 'follow' && ctrl) {
       const s = g.config.humanTeam === 1 ? -1 : 1;
       const fx = ctrl.pos.x * 0.6 + b.x * 0.4;

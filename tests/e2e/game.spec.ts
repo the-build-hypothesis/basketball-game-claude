@@ -297,3 +297,29 @@ test('a runtime error shows the error screen with a reload option', async ({ pag
   await expect(page.locator('#error-msg')).toContainText('simulated failure');
   await expect(page.locator('#btn-reload')).toBeVisible();
 });
+
+test('instant replay after a made basket restores the exact live state', async ({ page }) => {
+  await startMatch(page);
+  await giveBall(page, 9.0, 0.5);
+  await page.evaluate(() => {
+    const g = (window as any).__app.game;
+    g.startShot(g.players[g.controlled], 0.9);
+  });
+  await expect(page.locator('#score0')).toHaveText('2', { timeout: 6000 });
+  await page.waitForTimeout(1500);
+  const before = await page.evaluate(() => {
+    const g = (window as any).__app.game;
+    return { phase: g.phase, clock: g.gameClock, x: g.players[3].pos.x };
+  });
+  expect(['deadball', 'inbound']).toContain(before.phase);
+  await page.keyboard.press('KeyR');
+  await expect(page.locator('#replay-banner')).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__app.state)).toBe('replay');
+  await expect(page.locator('#replay-banner')).toBeHidden({ timeout: 20_000 });
+  const after = await page.evaluate(() => {
+    const a = (window as any).__app;
+    return { state: a.state, score: [...a.game.score] };
+  });
+  expect(after.state).toBe('playing');
+  expect(after.score).toEqual([2, 0]);
+});

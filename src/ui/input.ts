@@ -11,6 +11,7 @@ export interface InputSnapshot {
   camera: boolean;
   mute: boolean;
   help: boolean;
+  replay: boolean;
   debug: boolean;
 }
 
@@ -57,6 +58,7 @@ export class Input {
       camera: this.edge('KeyC'),
       mute: this.edge('KeyM'),
       help: this.edge('KeyH'),
+      replay: this.edge('KeyR'),
       debug: this.edge('Backquote', 'F3'),
     };
     // gamepad (standard mapping)
