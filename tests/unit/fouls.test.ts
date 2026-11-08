@@ -84,3 +84,52 @@ describe('fouls and free throws (GAME-013)', () => {
     expect(count(ev, 'foul')).toBe(0);
   });
 });
+
+describe('review regressions', () => {
+  it('a post-buzzer shot that lands out of bounds ends the game exactly once (no bogus dead ball)', () => {
+    const g = liveGame(0, BASKET_X - 5, 0);
+    g.quarter = 4;
+    g.score = [5, 2];
+    g.buzzerPending = false;
+    shootAt(g, 0);
+    run(g, 0.62);
+    g.gameClock = 0.01;
+    run(g, 0.02);
+    expect(g.buzzerPending).toBe(true);
+    // ball lands just past the sideline before touching the rim
+    g.ball.state = 'loose';
+    g.ball.pos = { x: 3, y: 0.13, z: 8 };
+    g.ball.vel = { x: 0, y: -1, z: 0 };
+    const ev = run(g, 6);
+    expect(g.phase).toBe('final');
+    expect(count(ev, 'final')).toBe(1);
+    expect(count(ev, 'turnover')).toBe(0);
+  });
+
+  it('a fouled shot that goes out of bounds awards free throws and no turnover', () => {
+    const g = liveGame(0, BASKET_X - 4, 0);
+    shootAt(g, 0);
+    run(g, 0.62);
+    expect(g.activeShot).not.toBeNull();
+    g.activeShot!.fouledBy = 5;
+    g.ball.state = 'loose';
+    g.ball.pos = { x: 3, y: 0.13, z: 8 };
+    g.ball.vel = { x: 0, y: -1, z: 0 };
+    const ev = run(g, 0.1);
+    expect(count(ev, 'turnover')).toBe(0);
+    expect(g.phase).toBe('freethrow');
+    expect(g.stats[0].tov).toBe(0);
+  });
+
+  it('the game clock does not run while the last free throw is in the air', () => {
+    const g = liveGame(0, 0, 0);
+    g.gameClock = 0.4;
+    g.startFreeThrows(0, 1);
+    g.startShot(g.players[0], 0.9);
+    run(g, 0.7); // released, ball in the air
+    expect(g.phase).toBe('live');
+    const c = g.gameClock;
+    run(g, 0.3);
+    if (g.ball.state !== 'held' && g.phase === 'live') expect(g.gameClock).toBe(c);
+  });
+});

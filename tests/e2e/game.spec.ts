@@ -150,7 +150,9 @@ test('controls: move, pass to a teammate, and shoot through the keyboard', async
     await giveBall(page, 6, 0);
   }
 
-  // shoot (hold and release)
+  // shoot (hold and release) from a clean possession: the AI may legitimately have
+  // stolen the ball or fouled during the steps above
+  await giveBall(page, 7, 1);
   await page.keyboard.down('Space');
   await page.waitForTimeout(450);
   await page.keyboard.up('Space');

@@ -136,6 +136,8 @@ export class Game {
   playerPts: number[] = new Array(10).fill(0);
   ft: FreeThrowState | null = null;
   private pendingFT: { shooter: number; n: number } | null = null;
+  /** Game clock held after the last free throw until the ball is touched/scored/dead. */
+  clockHeld = false;
 
   constructor(config: Partial<GameConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -414,12 +416,15 @@ export class Game {
     } else this.shotClock = SHOT_CLOCK;
     this.shotClockFrozen = false;
     this.lastTouchTeam = info.team;
+    this.ball.pos = { x: inb.pos.x, y: 1.25, z: inb.pos.z };
+    this.ball.vel = { x: 0, y: 0, z: 0 };
     if (this.isHumanTeam(info.team)) this.setControlled(inb.id);
     else if (this.config.humanTeam >= 0) this.autoSwitchDefense();
   }
 
   /** Stop play and schedule an inbound for `team` at `spot`. */
   private startDeadball(reason: string, team: TeamId, spot: V2): void {
+    this.clockHeld = false;
     const cands = this.teamPlayers(team);
     const inb = this.nearestPlayer(cands, spot);
     const keep = (reason === 'oob' || reason === 'foul') && this.possession === team && !this.shotClockFrozen;
@@ -678,6 +683,7 @@ export class Game {
       this.ft.releasedT = 0;
       // the last free throw is a live ball
       if (this.ft.attempt >= this.ft.total) {
+        this.clockHeld = true;
         this.phase = 'live';
         this.phaseT = 0;
         this.ft = null;
@@ -1010,6 +1016,7 @@ export class Game {
       if (this.buzzerT > 4) this.endQuarter();
       return;
     }
+    if (this.clockHeld) return; // clock starts when the last free throw is touched
     this.gameClock -= dt;
     if (!this.shotClockFrozen) this.shotClock -= dt;
     if (this.gameClock <= 0) {
@@ -1295,10 +1302,12 @@ export class Game {
     const onFloor = b.pos.y <= BALL_R + 0.03;
     if ((onFloor && !isInBounds(b.pos.x, b.pos.z)) || Math.abs(b.pos.x) > HALF_L + 6 || Math.abs(b.pos.z) > HALF_W + 6) {
       if (this.phase === 'live') {
+        // resolve the shot first: it may end the period (buzzer) or award free throws (foul)
+        if (shot && !shot.resolved) this.resolveMiss(shot);
+        if ((this.phase as Phase) !== 'live' || this.pendingFT) return;
         const team = (1 - this.lastTouchTeam) as TeamId;
         this.stats[this.lastTouchTeam].tov++;
         this.emit({ type: 'turnover', team: this.lastTouchTeam, reason: 'Out of bounds' });
-        if (shot && !shot.resolved) this.resolveMiss(shot);
         this.startDeadball('oob', team, this.oobSpot(b.pos.x, b.pos.z));
         return;
       }
@@ -1458,6 +1467,7 @@ export class Game {
       this.emit({ type: 'rejected', reason: 'after buzzer' });
       return;
     }
+    this.clockHeld = false;
     this.score[team] += points;
     const st = this.stats[team];
     st.pts += points;
@@ -1534,6 +1544,7 @@ export class Game {
     const b = this.ball;
     const prevPoss = this.possession;
     const shot = this.activeShot;
+    this.clockHeld = false;
     // anyone else still gathering for a shot has lost the ball
     for (const q of this.players) {
       if (q.id !== p.id && q.action && q.action.kind === 'shoot' && !q.action.released) q.action = null;
@@ -1548,6 +1559,10 @@ export class Game {
     this.looseT = 0;
     if (shot) {
       if (!shot.resolved) this.resolveMiss(shot);
+      if ((this.phase as Phase) === 'final' || (this.phase as Phase) === 'quarterEnd') {
+        this.activeShot = null;
+        return;
+      }
       if (!shot.scored && shot.fouledBy < 0) {
         const off = shot.team === p.team;
         if (off) this.stats[p.team].oreb++;
