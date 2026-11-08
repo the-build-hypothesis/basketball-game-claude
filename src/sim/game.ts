@@ -737,7 +737,9 @@ export class Game {
 
     this.updateHuman(dt);
     for (const p of this.players) {
-      if (!this.isHumanControlled(p)) updateAI(this, p, dt);
+      // the designated inbounder walks to the spot automatically, even if human-controlled
+      const autoInbounder = this.phase === 'deadball' && this.deadball?.inbounder === p.id;
+      if (!this.isHumanControlled(p) || autoInbounder) updateAI(this, p, dt);
     }
     this.updatePlayers(dt, false);
     if (this.phase === 'tipoff') this.updateTipoff();

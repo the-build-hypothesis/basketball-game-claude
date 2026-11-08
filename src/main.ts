@@ -46,6 +46,11 @@ class App {
   private finalT = 0;
   private showDebug = false;
   private frameTimes: number[] = [];
+  private perfWindow = 0;
+  private perfFrames = 0;
+  private autoDowngrades = 0;
+  /** Disable automatic quality reduction (tests). */
+  autoQuality = true;
   /** Optional sim speed multiplier (tests / debugging). */
   timeScale = 1;
   matches = 0;
@@ -243,6 +248,23 @@ class App {
       if (this.state === 'playing' && g.phase === 'final') {
         this.finalT += dt;
         if (this.finalT > 2.5) this.showFinal();
+      }
+      // adaptive quality: if a match runs below ~32 FPS for 5 s, step graphics down a level
+      if (this.state === 'playing' && this.autoQuality) {
+        this.perfWindow += dt;
+        this.perfFrames++;
+        if (this.perfWindow >= 5) {
+          const fps = this.perfFrames / this.perfWindow;
+          this.perfWindow = 0;
+          this.perfFrames = 0;
+          if (fps < 32 && this.quality !== 'low' && this.autoDowngrades < 2) {
+            this.autoDowngrades++;
+            this.quality = this.quality === 'high' ? 'medium' : 'low';
+            ($('opt-quality') as HTMLSelectElement).value = this.quality;
+            this.buildView();
+            this.hud.toast(`Graphics set to ${this.quality.toUpperCase()} for smoother play`, '', true, 2.5);
+          }
+        }
       }
       // perf telemetry
       this.frameTimes.push(dt);

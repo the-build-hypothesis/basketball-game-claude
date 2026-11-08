@@ -201,5 +201,6 @@ export class GameView {
     for (const pv of this.players) pv.dispose();
     this.arena.dispose();
     this.renderer.dispose();
+    this.renderer.forceContextLoss();
   }
 }

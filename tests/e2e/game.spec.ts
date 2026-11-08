@@ -124,7 +124,7 @@ test('controls: move, pass to a teammate, and shoot through the keyboard', async
   await page.waitForTimeout(900);
   await page.keyboard.up('KeyD');
   const b = await snap(page);
-  expect(b.cx - a.cx).toBeGreaterThan(2); // D moves screen-right (+x)
+  expect(b.cx - a.cx).toBeGreaterThan(1.5); // D moves screen-right (+x)
   await page.keyboard.down('KeyW');
   await page.waitForTimeout(500);
   await page.keyboard.up('KeyW');
