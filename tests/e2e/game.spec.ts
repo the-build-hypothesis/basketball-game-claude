@@ -280,3 +280,20 @@ test('free throws: human shoots both with the Space meter', async ({ page }) => 
   expect(s.score).toBe(s.ftm);
   expect(errors).toEqual([]);
 });
+
+test('losing window focus auto-pauses the match', async ({ page }) => {
+  await startMatch(page);
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await expect(page.locator('#pause')).toBeVisible();
+  await page.click('#btn-resume');
+  await expect(page.locator('#pause')).toBeHidden();
+});
+
+test('a runtime error shows the error screen with a reload option', async ({ page }) => {
+  await page.goto('/?quality=low');
+  await expect(page.locator('#menu')).toBeVisible({ timeout: 30_000 });
+  await page.evaluate(() => setTimeout(() => { throw new Error('simulated failure'); }, 0));
+  await expect(page.locator('#error')).toBeVisible();
+  await expect(page.locator('#error-msg')).toContainText('simulated failure');
+  await expect(page.locator('#btn-reload')).toBeVisible();
+});
