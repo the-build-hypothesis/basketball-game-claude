@@ -42,6 +42,7 @@ class App {
   replay = new Replay();
   /** Rolling log of recent game events (debugging / automated tests). */
   recentEvents: Array<{ type: string; [k: string]: unknown }> = [];
+  private tips = { offense: false, defense: false };
   quality: Quality = 'high';
   cameraMode: CameraMode = 'broadcast';
   config: GameConfig = { quarterLength: 120, quarters: 4, difficulty: 'normal', humanTeam: 0, seed: 1 };
@@ -128,6 +129,7 @@ class App {
     this.view.attach(this.game);
     this.hud.clearToasts();
     this.replay.reset();
+    this.tips = { offense: false, defense: false };
     this.hud.show(true);
     show('menu', false);
     show('pause', false);
@@ -311,6 +313,17 @@ class App {
           m.style.left = `${Math.min(window.innerWidth - 60, Math.max(10, sp.x + 40))}px`;
           m.style.top = `${Math.min(window.innerHeight - 120, Math.max(120, sp.y))}px`;
           m.style.bottom = 'auto';
+        }
+      }
+      // one-time contextual tips
+      if (this.state === 'playing' && g.phase === 'live' && g.controlled >= 0) {
+        const bh = g.ballHandler();
+        if (!this.tips.offense && bh && bh.id === g.controlled) {
+          this.tips.offense = true;
+          this.hud.toast('Hold SPACE, release in the green to shoot · E to pass · Shift to sprint', 'gold', true, 4.5);
+        } else if (!this.tips.defense && bh && bh.team !== g.config.humanTeam) {
+          this.tips.defense = true;
+          this.hud.toast('Defense: stay in front · F steal · SPACE jump/block · TAB switch player', 'gold', true, 4.5);
         }
       }
       if (this.state === 'playing' && g.phase === 'final') {
