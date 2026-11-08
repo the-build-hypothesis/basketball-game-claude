@@ -1263,6 +1263,7 @@ export class Game {
     }
 
     if (hits.basket >= 0) this.handleBasket(hits.basket);
+    if (b.state === 'flight' || b.state === 'loose') this.collideBodies();
 
     if (b.state === 'dead') return;
 
@@ -1295,6 +1296,41 @@ export class Game {
     }
 
     if (this.phase === 'live') this.checkCatches();
+  }
+
+  /** Ball vs. player torso (vertical capsule) collisions: deflections instead of passing through bodies. */
+  private collideBodies(): void {
+    const b = this.ball;
+    const R = 0.24 + BALL_R;
+    for (const p of this.players) {
+      // the passer/shooter's own body right after release, and the intended receiver, are skipped
+      if (b.flightT < 0.35 && (p.id === b.passFrom || (this.activeShot && this.activeShot.shooter === p.id))) continue;
+      if (b.state === 'flight' && b.flightKind === 'pass' && p.id === b.passTo) continue;
+      const lo = p.pos.y + 0.35;
+      const hi = p.pos.y + 1.8;
+      if (b.pos.y < lo - BALL_R || b.pos.y > hi + BALL_R) continue;
+      const dx = b.pos.x - p.pos.x;
+      const dz = b.pos.z - p.pos.z;
+      const d = len2(dx, dz);
+      if (d >= R || d < 1e-6) continue;
+      const nx = dx / d;
+      const nz = dz / d;
+      b.pos.x = p.pos.x + nx * R;
+      b.pos.z = p.pos.z + nz * R;
+      const vn = b.vel.x * nx + b.vel.z * nz;
+      if (vn < 0) {
+        b.vel.x -= 1.45 * vn * nx;
+        b.vel.z -= 1.45 * vn * nz;
+        b.vel.x *= 0.7;
+        b.vel.z *= 0.7;
+        if (b.state === 'flight' && b.flightKind === 'pass') {
+          b.state = 'loose';
+          b.flightKind = null;
+        }
+        this.lastTouchTeam = p.team;
+        if (-vn > 1.5) this.emit({ type: 'bounce', strength: -vn * 0.5 });
+      }
+    }
   }
 
   private placeHeldBall(p: Player, dt: number): void {

@@ -264,3 +264,26 @@ describe('dunks', () => {
     expect(g.score).toEqual([0, 2]);
   });
 });
+
+describe('ball vs body collisions', () => {
+  it('a pass into a defender who fails to intercept deflects off his body instead of passing through', () => {
+    const g = liveGame(0, 0, 0);
+    freezeAI(g, [0]);
+    const mate = g.players[1];
+    mate.pos.x = 8;
+    mate.pos.z = 0;
+    const d = g.players[5];
+    d.pos.x = 4;
+    d.pos.z = 0;
+    d.defRating = 0; // never intercepts
+    g.players[0].facing = 0;
+    g.doPass(g.players[0], mate);
+    let maxX = -Infinity;
+    for (let i = 0; i < 60; i++) {
+      run(g, 1 / 60);
+      if (g.ball.state !== 'held') maxX = Math.max(maxX, g.ball.pos.x);
+    }
+    expect(maxX).toBeLessThan(4.5); // never got past the defender's body
+    expect(g.ball.owner).not.toBe(1);
+  });
+});
