@@ -214,7 +214,9 @@ function ballhandler(g: Game, p: Player, dt: number): void {
     if (clockLeft < 2.2) thr = 0;
     const o = bestPassOption(g, p);
     const defNear = g.nearestDist(g.opponents(p.team), p.pos);
-    if (myVal > thr && (myVal >= o.val - 0.08 || clockLeft < 3)) return shootNow();
+    // a forward/center already attacking an open lane keeps going to the rim
+    const attacking = ai.driving && p.role >= 2 && dB < 4.5 && dB > 1.55 && clockLeft > 2;
+    if (!attacking && myVal > thr && (myVal >= o.val - 0.08 || clockLeft < 3)) return shootNow();
     if (o.to && o.val > 0.3 && clockLeft > 2.5 && g.time - ai.lastPassT > 1.0 && ai.holdT > 0.8) {
       if ((o.val > myVal + 0.2 && g.rng.chance(0.5)) || (defNear < 0.75 && g.rng.chance(0.15)) || ai.holdT > 6) {
         g.doPass(p, o.to);
@@ -228,7 +230,7 @@ function ballhandler(g: Game, p: Player, dt: number): void {
       const r = pointSegDist(q.pos, p.pos, { x: bx, z: 0 });
       if (r.d < 1.0 && r.t > 0.02 && r.t < 0.85) laneClear = false;
     }
-    ai.driving = laneClear && dB > 1.6 && g.rng.chance(0.55);
+    ai.driving = laneClear && dB > 1.6 && (ai.driving || g.rng.chance(0.45));
     if (!ai.driving && (!ai.probe || dist2(ai.probe, p.pos) < 0.6 || g.rng.chance(0.25))) {
       const ang = g.rng.range(-1.2, 1.2);
       const r = g.rng.range(5.0, 7.9);
@@ -239,7 +241,8 @@ function ballhandler(g: Game, p: Player, dt: number): void {
   }
   if (ai.driving) {
     moveTo(p, { x: bx - s * 0.9, z: 0 }, p.stamina > 0.3, 0.3);
-    if (dB < LAYUP_RANGE - 0.4) {
+    // guards finish with a layup; forwards/centers attack the rim for a dunk
+    if (dB < (p.role >= 2 ? 1.55 : LAYUP_RANGE - 0.4)) {
       shootNow();
       return;
     }

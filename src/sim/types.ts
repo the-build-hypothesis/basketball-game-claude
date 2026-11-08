@@ -27,6 +27,8 @@ export interface ShootAction {
   meterAtRelease: number;
   /** Free throw (set shot, no jump). */
   ft: boolean;
+  /** Dunk: auto-released at the top of the jump, ball slammed down through the rim. */
+  dunk: boolean;
 }
 export interface SimpleAction {
   kind: 'pass' | 'steal' | 'recover' | 'block';

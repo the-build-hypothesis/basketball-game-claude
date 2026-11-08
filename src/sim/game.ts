@@ -544,6 +544,8 @@ export class Game {
     const bx = attackBasketX(p.team);
     const d = len2(bx - p.pos.x, p.pos.z);
     const layup = !ftShot && d < LAYUP_RANGE;
+    // dunk: close to the rim and either attacking at speed or a forward/center
+    const dunk = layup && d < 1.7 && (p.sprinting || (!this.isHumanControlled(p) && p.role >= 2));
     const a: ShootAction = {
       kind: 'shoot',
       t: 0,
@@ -555,6 +557,7 @@ export class Game {
       jumped: ftShot,
       meterAtRelease: 0,
       ft: ftShot,
+      dunk,
     };
     p.action = a;
     p.facing = Math.atan2(-p.pos.z, bx - p.pos.x);
@@ -603,6 +606,10 @@ export class Game {
     const points: 1 | 2 | 3 = a.ft ? 1 : a.layup ? 2 : shotPointValue(a.fromX, a.fromZ, bx);
     // shooting foul? (decided at release from defender proximity / contact)
     const fouler = a.ft ? null : this.shootingFoul(p, a.layup);
+    if (a.dunk) {
+      this.releaseDunk(p, a, toR, fouler);
+      return;
+    }
     const ae = Math.abs(e);
     const label = ae < 0.035 ? 'PERFECT' : ae < 0.09 ? 'GOOD' : e < 0 ? 'EARLY' : 'LATE';
     const contest = a.ft ? 0 : this.contestLevel(p);
@@ -674,6 +681,50 @@ export class Game {
         this.shotClock = SHOT_CLOCK;
       }
     }
+  }
+
+  private releaseDunk(p: Player, a: ShootAction, toR: V2, fouler: Player | null): void {
+    const bx = attackBasketX(p.team);
+    const hand: V3 = { x: p.pos.x + toR.x * 0.3, y: p.pos.y + 2.6, z: p.pos.z + toR.z * 0.3 };
+    // a heavily contested or fouled dunk can be stuffed / rattle out
+    const contest = this.contestLevel(p);
+    const miss = this.rng.chance(clamp((contest - 0.6) * 0.5 + (fouler ? 0.25 : 0), 0, 0.6) * this.shotErrorScale);
+    const off = miss ? 0.2 : 0;
+    const target: V3 = { x: bx - toR.x * off, y: RIM_H - 0.35, z: -toR.z * off };
+    const b = this.ball;
+    b.state = 'flight';
+    b.flightKind = 'shot';
+    b.owner = -1;
+    b.pos = hand;
+    b.vel = solveLaunchTime(hand, target, 0.14);
+    b.flightT = 0;
+    this.lastTouchTeam = p.team;
+    this.activeShot = {
+      id: ++this.shotCounter,
+      shooter: p.id,
+      team: p.team,
+      points: 2,
+      layup: true,
+      ft: false,
+      fouledBy: fouler ? fouler.id : -1,
+      dist: 0.3,
+      label: 'DUNK',
+      contest,
+      releaseClock: this.gameClock,
+      valid: this.phase === 'live' && this.gameClock > 0,
+      touchedRim: false,
+      touchedBoard: false,
+      scored: false,
+      blocked: false,
+      resolved: false,
+      t: 0,
+      blockRolled: new Set(),
+    };
+    this.stats[p.team].fga++;
+    a.meterAtRelease = SHOT_IDEAL;
+    this.emit({ type: 'shotRelease', team: p.team, label: 'DUNK', points: 2, shooter: p.id, meter: SHOT_IDEAL, contest });
+    this.emit({ type: 'rim', strength: 6 });
+    if (fouler) this.callFoul(fouler, p, 'shooting', 2);
   }
 
   /** Decide whether a defender fouls the shooter on release. */
@@ -785,7 +836,7 @@ export class Game {
     const p = this.players[ft.shooter];
     if (!ft.released) {
       const human = this.isHumanControlled(p);
-      const giveUpAt = human ? 9 : 1.4;
+      const giveUpAt = human ? 7 : 1.4;
       if (!p.action && ft.t > giveUpAt) {
         const prm = aiParams(this, p.team);
         this.startShot(p, human ? SHOT_IDEAL + 0.25 : SHOT_IDEAL + this.rng.normal() * prm.timingSigma);
@@ -1012,7 +1063,7 @@ export class Game {
     if (inp.switchPressed) this.switchPlayer();
     if (hasBall && this.phase === 'live') {
       if (pressed && this.canAct(p) && p.pos.y < 0.01) this.startShot(p);
-      if (p.action && p.action.kind === 'shoot' && !p.action.released && released) this.releaseShot(p);
+      if (p.action && p.action.kind === 'shoot' && !p.action.released && !p.action.dunk && released) this.releaseShot(p);
       if (inp.passPressed && this.canAct(p)) this.doPass(p, this.choosePassTarget(p, inp.move));
     } else if (!hasBall && (this.phase === 'live' || this.phase === 'deadball' || this.phase === 'inbound')) {
       if (pressed && this.canAct(p)) this.jump(p, BLOCK_JUMP_HEIGHT);
@@ -1036,13 +1087,15 @@ export class Game {
         if (a.kind === 'shoot') {
           if (!a.jumped && a.t > 0.12) {
             a.jumped = true;
-            p.vy = Math.sqrt(2 * GRAVITY * (a.layup ? 0.6 : JUMP_HEIGHT));
+            p.vy = Math.sqrt(2 * GRAVITY * (a.dunk ? 0.85 : a.layup ? 0.6 : JUMP_HEIGHT));
             p.pos.y = 0.001;
             this.emit({ type: 'jump', player: p.id });
           }
           if (!a.released) {
             const meter = a.t / SHOT_METER_TIME;
-            if (meter >= a.autoRelease || meter >= SHOT_FORCE_RELEASE) this.releaseShot(p);
+            if (a.dunk) {
+              if (a.jumped && p.vy <= 0.4) this.releaseShot(p); // slam at the top of the jump
+            } else if (meter >= a.autoRelease || meter >= SHOT_FORCE_RELEASE) this.releaseShot(p);
           }
           if (a.released && p.pos.y <= 0 && a.jumped) p.action = { kind: 'recover', t: 0, dur: 0.18 };
         } else if (a.t >= a.dur && (a.kind !== 'block' || p.pos.y <= 0)) {
@@ -1080,7 +1133,7 @@ export class Game {
         const bx = attackBasketX(p.team);
         const d = len2(bx - p.pos.x, p.pos.z);
         const dir = norm2(bx - p.pos.x, -p.pos.z);
-        const sp = d > 0.85 ? 3.2 : 0;
+        const sp = d > (a2.dunk ? 0.45 : 0.85) ? (a2.dunk ? 4.2 : 3.2) : 0;
         p.vel.x = dir.x * sp;
         p.vel.z = dir.z * sp;
       } else if (!airborne) {
@@ -1257,7 +1310,7 @@ export class Game {
       const k = clamp(a.t / 0.15, 0, 1);
       b.pos.x = p.pos.x + fx * 0.22;
       b.pos.z = p.pos.z + fz * 0.22;
-      b.pos.y = p.pos.y + 1.25 + k * (a.layup ? 1.25 : 1.1);
+      b.pos.y = p.pos.y + 1.25 + k * (a.dunk ? 1.45 : a.layup ? 1.25 : 1.1);
     } else if (this.phase !== 'live' || p.holdT < 0.25 || (a && a.kind === 'pass')) {
       b.pos.x = p.pos.x + fx * 0.38;
       b.pos.z = p.pos.z + fz * 0.38;

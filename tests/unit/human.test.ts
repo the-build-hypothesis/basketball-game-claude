@@ -15,7 +15,9 @@ function playMatch(g: Game, drive: (g: Game, t: number) => void) {
     g.drainEvents();
     n++;
     const key = `${g.phase}|${g.quarter}`;
-    if (key === prev && g.phase !== 'live') stall += SIM_DT;
+    // a multi-shot free-throw trip legitimately waits for the human on each attempt
+    const limitScale = g.phase === 'freethrow' ? 3 : 1;
+    if (key === prev && g.phase !== 'live') stall += SIM_DT / limitScale;
     else stall = 0;
     prev = key;
     maxStall = Math.max(maxStall, stall);

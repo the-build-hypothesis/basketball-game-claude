@@ -46,11 +46,11 @@ export class Hud {
           const mine = e.team === human;
           const shooter = e.shooter >= 0 ? g.players[e.shooter] : null;
           this.toast(
-            e.label === 'FT' ? `FREE THROW GOOD +1 ${name(e.team)}` : `${e.points === 3 ? 'THREE! ' : ''}+${e.points} ${name(e.team)}`,
+            e.label === 'FT' ? `FREE THROW GOOD +1 ${name(e.team)}` : `${e.label === 'DUNK' ? 'DUNK! ' : e.points === 3 ? 'THREE! ' : ''}+${e.points} ${name(e.team)}`,
             mine ? 'good' : 'bad',
             e.label === 'FT',
           );
-          if (shooter && e.label !== 'FT') this.toast(`#${shooter.number} ${shooter.name}${e.label ? ' · ' + e.label + ' release' : ''}`, '', true, 1.4);
+          if (shooter && e.label !== 'FT') this.toast(`#${shooter.number} ${shooter.name}${e.label && e.label !== 'DUNK' ? ' · ' + e.label + ' release' : ''}`, '', true, 1.4);
           break;
         }
         case 'miss':

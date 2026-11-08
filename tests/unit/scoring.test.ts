@@ -241,3 +241,26 @@ describe('ball ownership guards', () => {
     expect(g.stats[1].fga).toBe(0);
   });
 });
+
+describe('dunks', () => {
+  it('a sprinting human close to the rim dunks for exactly 2 through real ball geometry', () => {
+    const g = liveGame(0, BASKET_X - 1.3, 0.3);
+    freezeAI(g, [0]);
+    g.players[0].sprinting = true;
+    shootAt(g, 0);
+    expect(g.players[0].action?.kind === 'shoot' && g.players[0].action.dunk).toBe(true);
+    const ev = run(g, 3);
+    expect(ev.some((e) => e.type === 'shotRelease' && e.label === 'DUNK')).toBe(true);
+    expect(count(ev, 'score')).toBe(1);
+    expect(g.score).toEqual([2, 0]);
+  });
+
+  it('an AI center attacking the rim dunks', () => {
+    const g = liveGame(9, -BASKET_X + 1.2, -0.2);
+    freezeAI(g, [9]);
+    shootAt(g, 9);
+    const ev = run(g, 3);
+    expect(ev.some((e) => e.type === 'shotRelease' && e.label === 'DUNK')).toBe(true);
+    expect(g.score).toEqual([0, 2]);
+  });
+});
