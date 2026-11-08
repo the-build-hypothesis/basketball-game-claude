@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.wrangler/
+test-results/
+playwright-report/
+# secrets — never commit
+.dev.vars
+cloudflare.env
+*.env
+.env*

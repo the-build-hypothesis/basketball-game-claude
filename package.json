@@ -1,0 +1,26 @@
+{
+  "name": "hardwood-heroes",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:all": "npm run test && npm run build && npm run test:e2e",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/three": "^0.170.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.3",
+    "vitest": "^2.1.8",
+    "wrangler": "^4.158.0"
+  }
+}
