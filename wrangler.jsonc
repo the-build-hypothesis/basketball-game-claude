@@ -1,0 +1,12 @@
+{
+  // Static-assets-only Cloudflare Worker serving the Vite build output.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bh-basketball-v1-claude",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  },
+  "workers_dev": true,
+  "preview_urls": false
+}
