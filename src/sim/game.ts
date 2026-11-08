@@ -582,6 +582,11 @@ export class Game {
   releaseShot(p: Player): void {
     const a = p.action as ShootAction;
     if (!a || a.kind !== 'shoot' || a.released) return;
+    if (this.ball.state !== 'held' || this.ball.owner !== p.id) {
+      // lost the ball during the gather (e.g. stripped): cancel the attempt
+      p.action = null;
+      return;
+    }
     a.released = true;
     const meter = a.t / SHOT_METER_TIME;
     a.meterAtRelease = meter;
@@ -1431,6 +1436,10 @@ export class Game {
     const b = this.ball;
     const prevPoss = this.possession;
     const shot = this.activeShot;
+    // anyone else still gathering for a shot has lost the ball
+    for (const q of this.players) {
+      if (q.id !== p.id && q.action && q.action.kind === 'shoot' && !q.action.released) q.action = null;
+    }
     b.state = 'held';
     b.owner = p.id;
     b.flightKind = null;

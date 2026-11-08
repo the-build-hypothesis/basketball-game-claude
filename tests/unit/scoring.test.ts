@@ -228,3 +228,16 @@ describe('possession changes (TEST-003)', () => {
     expect(g.phase).toBe('live');
   });
 });
+
+describe('ball ownership guards', () => {
+  it('a shooter who loses the ball mid-gather cannot release it', () => {
+    const g = liveGame(7, -BASKET_X + 6, 0);
+    shootAt(g, 7);
+    run(g, 0.2);
+    // ball changes hands while #7 is gathering
+    g.gainPossession(g.players[0], 'loose');
+    run(g, 1.0);
+    expect(g.ball.owner).toBe(0);
+    expect(g.stats[1].fga).toBe(0);
+  });
+});
